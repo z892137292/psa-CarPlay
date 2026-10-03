@@ -9,8 +9,8 @@ permissions:
   contents: write
 
 env:
-  RELEASE_TAG: v0.1.0
-  RELEASE_NAME: PSA Test 0.1
+  RELEASE_TAG: v0.2.0
+  RELEASE_NAME: PSA Test 0.2
 
 jobs:
   build:
@@ -40,12 +40,12 @@ jobs:
           git clone --depth 1 --branch v0.2.10 https://github.com/shihabal3amri/DiPlay.git upstream
           test "$(git -C upstream rev-parse HEAD)" = "3e43e25c55921bdf5149f5f92851acf202ed353a"
 
-      - name: Apply PSA Test 0.1 changes
+      - name: Apply PSA Test 0.2 changes
         run: |
-          base64 -d patches/psa-test-0.1.patch.gz.b64 | gzip -d > "$RUNNER_TEMP/psa-test-0.1.patch"
+          base64 -d patches/psa-test-0.2.patch.gz.b64 | gzip -d > "$RUNNER_TEMP/psa-test-0.2.patch"
           cd upstream
-          git apply --check "$RUNNER_TEMP/psa-test-0.1.patch"
-          git apply "$RUNNER_TEMP/psa-test-0.1.patch"
+          git apply --check "$RUNNER_TEMP/psa-test-0.2.patch"
+          git apply "$RUNNER_TEMP/psa-test-0.2.patch"
 
       - name: Provision runtime CarPlay authentication assets
         run: |
@@ -56,7 +56,7 @@ jobs:
           test -s "$RUNNER_TEMP/psa-auth/offline-mfi/identity.pk8"
           test -s "$RUNNER_TEMP/psa-auth/offline-mfi/certificate.p7b"
 
-      - name: Build standalone PSA Test 0.1 APK
+      - name: Build standalone PSA Test 0.2 APK
         env:
           DIPLAY_AUTH_ASSETS_DIR: ${{ runner.temp }}/psa-auth
         run: |
@@ -71,15 +71,15 @@ jobs:
           unzip -l "$APK" | grep -q "assets/offline-mfi/identity.pk8"
           unzip -l "$APK" | grep -q "assets/offline-mfi/certificate.p7b"
           mkdir -p out
-          cp "$APK" out/PSA-Test-0.1-Android9-debug.apk
-          sha256sum out/PSA-Test-0.1-Android9-debug.apk | tee out/SHA256SUMS.txt
+          cp "$APK" out/PSA-Test-0.2-Android9-debug.apk
+          sha256sum out/PSA-Test-0.2-Android9-debug.apk | tee out/SHA256SUMS.txt
 
       - name: Upload Actions artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PSA-Test-0.1-Android9
+          name: PSA-Test-0.2-Android9
           path: |
-            out/PSA-Test-0.1-Android9-debug.apk
+            out/PSA-Test-0.2-Android9-debug.apk
             out/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30
@@ -89,6 +89,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG"               --target "$GITHUB_SHA"               --title "$RELEASE_NAME"               --notes "PSA Android 9 / API 28 first test build. BYD runtime integrations are disabled, the working DiPlay 0.2.10 CarPlay core is retained, and PSA disconnect diagnostics are enabled. Service refactoring and NCM recovery are not included yet."
+            gh release create "$RELEASE_TAG"               --target "$GITHUB_SHA"               --title "$RELEASE_NAME"               --notes "PSA Android 9 / API 28 second stability test. Keeps the working DiPlay 0.2.10 USB/iAP2/NCM/VPN core, disables BYD runtime integrations, keeps the foreground session service alive across task removal, preserves control/media when the AirPlay event channel drops, and gives AirPlay a 4-second local-recovery window before full-stack reconnect. NCM USB request handling is intentionally unchanged in this build."
           fi
-          gh release upload "$RELEASE_TAG"             out/PSA-Test-0.1-Android9-debug.apk             out/SHA256SUMS.txt             --clobber
+          gh release upload "$RELEASE_TAG"             out/PSA-Test-0.2-Android9-debug.apk             out/SHA256SUMS.txt             --clobber
