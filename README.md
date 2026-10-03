@@ -17,3 +17,7 @@ Build strategy:
 Target: Android 9 / API 28 PSA head unit.
 
 The first test build keeps the working DiPlay CarPlay core, disables BYD-specific runtime integrations, and adds disconnect diagnostics. Service refactoring and NCM recovery are intentionally deferred until the first PSA disconnect log is captured.
+
+## Build
+
+GitHub Actions builds the Android 9 test APK automatically on pushes to `main` and can also be started manually from the Actions tab.
