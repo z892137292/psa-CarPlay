@@ -1,0 +1,81 @@
+name: Build PSA Test APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout PSA build files
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;28.2.13676358
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Fetch DiPlay v0.2.10 source
+        run: |
+          git clone --depth 1 --branch v0.2.10 https://github.com/shihabal3amri/DiPlay.git upstream
+          test "$(git -C upstream rev-parse HEAD)" = "3e43e25c55921bdf5149f5f92851acf202ed353a"
+
+      - name: Apply PSA Test 0.1 changes
+        run: |
+          base64 -d patches/psa-test-0.1.patch.gz.b64 | gzip -d > "$RUNNER_TEMP/psa-test-0.1.patch"
+          cd upstream
+          git apply --check "$RUNNER_TEMP/psa-test-0.1.patch"
+          git apply "$RUNNER_TEMP/psa-test-0.1.patch"
+
+      - name: Provision runtime CarPlay authentication assets
+        run: |
+          curl --fail --location --retry 3             https://github.com/shihabal3amri/DiPlay/releases/download/v0.2.10/DiPlay-0.2.10.apk             --output "$RUNNER_TEMP/DiPlay-0.2.10.apk"
+          mkdir -p "$RUNNER_TEMP/psa-auth/offline-mfi"
+          unzip -p "$RUNNER_TEMP/DiPlay-0.2.10.apk" assets/offline-mfi/identity.pk8             > "$RUNNER_TEMP/psa-auth/offline-mfi/identity.pk8"
+          unzip -p "$RUNNER_TEMP/DiPlay-0.2.10.apk" assets/offline-mfi/certificate.p7b             > "$RUNNER_TEMP/psa-auth/offline-mfi/certificate.p7b"
+          test -s "$RUNNER_TEMP/psa-auth/offline-mfi/identity.pk8"
+          test -s "$RUNNER_TEMP/psa-auth/offline-mfi/certificate.p7b"
+
+      - name: Build standalone PSA Test 0.1 APK
+        env:
+          DIPLAY_AUTH_ASSETS_DIR: ${{ runner.temp }}/psa-auth
+        run: |
+          cd upstream
+          chmod +x gradlew
+          ./gradlew :mobile:assembleStandaloneDebug --stacktrace
+
+      - name: Verify and stage APK
+        run: |
+          APK="$(find upstream/mobile/build/outputs/apk/debug -maxdepth 1 -type f -name '*.apk' | head -n 1)"
+          test -n "$APK"
+          unzip -l "$APK" | grep -q "assets/offline-mfi/identity.pk8"
+          unzip -l "$APK" | grep -q "assets/offline-mfi/certificate.p7b"
+          mkdir -p out
+          cp "$APK" out/PSA-Test-0.1-Android9-debug.apk
+          sha256sum out/PSA-Test-0.1-Android9-debug.apk | tee out/SHA256SUMS.txt
+
+      - name: Upload installable APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: PSA-Test-0.1-Android9
+          path: |
+            out/PSA-Test-0.1-Android9-debug.apk
+            out/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
