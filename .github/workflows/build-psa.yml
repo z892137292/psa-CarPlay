@@ -6,7 +6,11 @@ on:
     branches: [ "main" ]
 
 permissions:
-  contents: read
+  contents: write
+
+env:
+  RELEASE_TAG: v0.1.0
+  RELEASE_NAME: PSA Test 0.1
 
 jobs:
   build:
@@ -70,7 +74,7 @@ jobs:
           cp "$APK" out/PSA-Test-0.1-Android9-debug.apk
           sha256sum out/PSA-Test-0.1-Android9-debug.apk | tee out/SHA256SUMS.txt
 
-      - name: Upload installable APK
+      - name: Upload Actions artifact
         uses: actions/upload-artifact@v4
         with:
           name: PSA-Test-0.1-Android9
@@ -79,3 +83,12 @@ jobs:
             out/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG"               --target "$GITHUB_SHA"               --title "$RELEASE_NAME"               --notes "PSA Android 9 / API 28 first test build. BYD runtime integrations are disabled, the working DiPlay 0.2.10 CarPlay core is retained, and PSA disconnect diagnostics are enabled. Service refactoring and NCM recovery are not included yet."
+          fi
+          gh release upload "$RELEASE_TAG"             out/PSA-Test-0.1-Android9-debug.apk             out/SHA256SUMS.txt             --clobber
