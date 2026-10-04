@@ -86,6 +86,37 @@ object PsaVideoTelemetry {
 }
 """)
 
+wifi = ROOT / "shared/src/main/java/com/shilapi/xcertplay/network/PsaWifiCounters.kt"
+wifi.write_text("""package com.shilapi.xcertplay.network
+
+import java.io.File
+
+/** Read-only interface counters. Some vendors do not expose these to apps. */
+object PsaWifiCounters {
+    @Volatile private var iface: String? = null
+
+    fun attach(name: String?) {
+        iface = name?.takeIf { it.matches(Regex("(?:ap|wlan|p2p|softap)[0-9]+")) }
+    }
+
+    fun snapshot(): String {
+        val name = iface ?: return "Wi-Fi 接口尚未建立"
+        fun counter(key: String): Long? = try {
+            File("/sys/class/net/" + name + "/statistics/" + key)
+                .readText().trim().toLongOrNull()
+        } catch (_: Exception) {
+            null
+        }
+        val rx = counter("rx_packets") ?: return "Wi-Fi 计数器无读取权限（" + name + "）"
+        val dropped = counter("rx_dropped")
+        val errors = counter("rx_errors")
+        return "Wi-Fi " + name + " 累计RX=" + rx +
+            " 丢弃=" + (dropped?.toString() ?: "?") +
+            " 错误=" + (errors?.toString() ?: "?")
+    }
+}
+""")
+
 v = "shared/src/main/java/com/shilapi/xcertplay/media/VideoStats.kt"
 edit(v,
 """    private var maxArrivalGapNs = 0L
@@ -171,6 +202,13 @@ edit(controller,
             }
 """)
 
+edit(controller,
+"""            val hotspotInfo = startWirelessHotspot(generation)
+""",
+"""            val hotspotInfo = startWirelessHotspot(generation)
+            com.shilapi.xcertplay.network.PsaWifiCounters.attach(hotspotInfo.interfaceName)
+""")
+
 activity = "common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt"
 edit(activity,
 """    private fun connect(wireless: Boolean) {
@@ -216,14 +254,16 @@ edit(host,
             buildDebugLogsSection(),
 """,
 """        val psaPerfText = menuText(
-            com.shilapi.xcertplay.media.PsaVideoTelemetry.snapshot(), 16f, MENU_SECONDARY
+            com.shilapi.xcertplay.media.PsaVideoTelemetry.snapshot() + "\\n" +
+                com.shilapi.xcertplay.network.PsaWifiCounters.snapshot(), 16f, MENU_SECONDARY
         )
         content.addView(psaPerfText)
         content.addView(Button(this).apply {
             text = "刷新视频性能 / 网络与解码诊断"
             isAllCaps = false
             setOnClickListener {
-                psaPerfText.text = com.shilapi.xcertplay.media.PsaVideoTelemetry.snapshot()
+                psaPerfText.text = com.shilapi.xcertplay.media.PsaVideoTelemetry.snapshot() + "\\n" +
+                    com.shilapi.xcertplay.network.PsaWifiCounters.snapshot()
             }
         })
         content.addView(
