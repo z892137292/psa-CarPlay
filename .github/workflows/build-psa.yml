@@ -28,14 +28,14 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Materialize pinned DiPlay mainline with PSA foundation
         run: |
-          git clone --depth 1 --branch v0.2.20 https://github.com/shihabal3amri/DiPlay.git upstream
+          git clone --depth 1 --branch v0.2.10 https://github.com/shihabal3amri/DiPlay.git upstream
           test "$(git -C upstream rev-parse HEAD)" = "3e43e25c55921bdf5149f5f92851acf202ed353a"
           base64 -d patches/psa-main-0.2.2.patch.gz.b64 | gzip -d > "$RUNNER_TEMP/psa-foundation.patch"
           git -C upstream apply --check "$RUNNER_TEMP/psa-foundation.patch"
           git -C upstream apply "$RUNNER_TEMP/psa-foundation.patch"
       - name: Provision existing upstream runtime authentication
         run: |
-          curl --fail --location --retry 3 https://github.com/shihabal3amri/DiPlay/releases/download/v0.2.20/DiPlay-0.2.20.apk --output "$RUNNER_TEMP/upstream.apk"
+          curl --fail --location --retry 3 https://github.com/shihabal3amri/DiPlay/releases/download/v0.2.10/DiPlay-0.2.10.apk --output "$RUNNER_TEMP/upstream.apk"
           mkdir -p "$RUNNER_TEMP/psa-auth/offline-mfi"
           unzip -p "$RUNNER_TEMP/upstream.apk" assets/offline-mfi/identity.pk8 > "$RUNNER_TEMP/psa-auth/offline-mfi/identity.pk8"
           unzip -p "$RUNNER_TEMP/upstream.apk" assets/offline-mfi/certificate.p7b > "$RUNNER_TEMP/psa-auth/offline-mfi/certificate.p7b"
