@@ -39,7 +39,7 @@ public class HotspotActivity extends Activity {
   LinearLayout right=new LinearLayout(this);right.setOrientation(1);right.setPadding(dp(18),0,0,0);body.addView(right,new LinearLayout.LayoutParams(0,-1,1));
   String[] labels={"开启热点","关闭热点","检测连接","查看日志"};
   for(int r=0;r<2;r++){LinearLayout row=new LinearLayout(this);right.addView(row,new LinearLayout.LayoutParams(-1,0,1));for(int c=0;c<2;c++){final int n=r*2+c;Button button=new Button(this);button.setText(labels[n]);button.setTextSize(19);button.setAllCaps(false);button.setTextColor(Color.WHITE);button.setBackground(bg(n==0?"#147E88":"#28435E",12));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,-1,1);p.setMargins(dp(5),dp(5),dp(5),dp(5));row.addView(button,p);button.setOnClickListener(v->{if(n<2)settings(n==0);else if(n==2){log("手动检测连接");detect();}else showLogs();});}}
-  note=text("v0.1 · 开关进入系统设置，由你手动操作；无法读取的信息显示未知。",13,"#A5B4C6");root.addView(note);setContentView(scroll);log("PSA Hotspot v0.1 启动 · Android API "+Build.VERSION.SDK_INT);
+  note=text("v0.2 · 开关进入系统设置，由你手动操作；无法读取的信息显示未知。",13,"#A5B4C6");root.addView(note);Button p2p=new Button(this);p2p.setText("Wi-Fi Direct 测试");p2p.setOnClickListener(v->startActivity(new Intent(this,P2pTestActivity.class)));root.addView(p2p);setContentView(scroll);log("PSA Hotspot v0.2 启动 · Android API "+Build.VERSION.SDK_INT);
  }
  @Override protected void onResume(){super.onResume();active=true;generation++;handler.post(poll);}
  @Override protected void onPause(){active=false;generation++;handler.removeCallbacks(poll);super.onPause();}

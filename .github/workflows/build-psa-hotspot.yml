@@ -22,25 +22,25 @@ jobs:
         with:
           gradle-version: '8.9'
       - name: Build independent APK
-        run: gradle -p psa-hotspot :app:assembleDebug --no-daemon
+        run: gradle -p psa-hotspot :app:testDebugUnitTest :app:assembleDebug --no-daemon
       - name: Verify and package
         run: |
           mkdir -p release-hotspot
-          cp psa-hotspot/app/build/outputs/apk/debug/app-debug.apk release-hotspot/PSA-Hotspot-v0.1-Android9.apk
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging release-hotspot/PSA-Hotspot-v0.1-Android9.apk > release-hotspot/apk-metadata.txt
+          cp psa-hotspot/app/build/outputs/apk/debug/app-debug.apk release-hotspot/PSA-Hotspot-v0.2-Android9.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging release-hotspot/PSA-Hotspot-v0.2-Android9.apk > release-hotspot/apk-metadata.txt
           grep "package: name='com.psa.hotspothelper'" release-hotspot/apk-metadata.txt
           grep "sdkVersion:'28'" release-hotspot/apk-metadata.txt
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify release-hotspot/PSA-Hotspot-v0.1-Android9.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify release-hotspot/PSA-Hotspot-v0.2-Android9.apk
           cp psa-hotspot/README.md release-hotspot/README.md
           cd release-hotspot
-          sha256sum PSA-Hotspot-v0.1-Android9.apk > SHA256SUMS.txt
+          sha256sum PSA-Hotspot-v0.2-Android9.apk > SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: PSA-Hotspot-v0.1
+          name: PSA-Hotspot-v0.2
           path: release-hotspot/*
       - name: Publish independent test release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view psa-hotspot-v0.1 >/dev/null 2>&1 || gh release create psa-hotspot-v0.1 --target "$GITHUB_SHA" --title "PSA Hotspot v0.1 横屏独立测试版" --prerelease --notes-file psa-hotspot/README.md
-          gh release upload psa-hotspot-v0.1 release-hotspot/* --clobber
+          gh release view psa-hotspot-v0.2 >/dev/null 2>&1 || gh release create psa-hotspot-v0.2 --target "$GITHUB_SHA" --title "PSA Hotspot v0.2 Wi-Fi Direct 验证版" --prerelease --notes-file psa-hotspot/README.md
+          gh release upload psa-hotspot-v0.2 release-hotspot/* --clobber
