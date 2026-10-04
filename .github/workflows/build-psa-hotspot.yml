@@ -1,0 +1,46 @@
+name: Build standalone PSA Hotspot
+on:
+  push:
+    branches: [psa-hotspot-v0.1]
+    paths: ['psa-hotspot/**', '.github/workflows/build-psa-hotspot.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build independent APK
+        run: gradle -p psa-hotspot :app:assembleDebug --no-daemon
+      - name: Verify and package
+        run: |
+          mkdir -p release-hotspot
+          cp psa-hotspot/app/build/outputs/apk/debug/app-debug.apk release-hotspot/PSA-Hotspot-v0.1-Android9.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging release-hotspot/PSA-Hotspot-v0.1-Android9.apk > release-hotspot/apk-metadata.txt
+          grep "package: name='com.psa.hotspothelper'" release-hotspot/apk-metadata.txt
+          grep "sdkVersion:'28'" release-hotspot/apk-metadata.txt
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify release-hotspot/PSA-Hotspot-v0.1-Android9.apk
+          cp psa-hotspot/README.md release-hotspot/README.md
+          cd release-hotspot
+          sha256sum PSA-Hotspot-v0.1-Android9.apk > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PSA-Hotspot-v0.1
+          path: release-hotspot/*
+      - name: Publish independent test release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view psa-hotspot-v0.1 >/dev/null 2>&1 || gh release create psa-hotspot-v0.1 --target "$GITHUB_SHA" --title "PSA Hotspot v0.1 横屏独立测试版" --prerelease --notes-file psa-hotspot/README.md
+          gh release upload psa-hotspot-v0.1 release-hotspot/* --clobber
