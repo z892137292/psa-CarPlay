@@ -217,7 +217,7 @@ edit(activity,
         if (wireless && AirPlayPersistence.loadWirelessHotspotMode(this) == WirelessHotspotMode.MANUAL) {
             val live = com.shilapi.xcertplay.network.PsaHotspotDiscovery.read(this)
             if (live != null && live.passphrase != null) {
-                saveHotspotCredentials(live.ssid, live.passphrase)
+                saveHotspotCredentials(live.ssid, live.passphrase.orEmpty())
                 pendingCarHotspotSetup = false
             } else if (live != null && live.ssid != storedSsid()) {
                 pendingCarHotspotSetup = true
@@ -233,7 +233,7 @@ edit(activity,
                     live == null -> toast("系统未开放热点配置读取权限，保留手动设置")
                     live.passphrase == null -> toast("识别到 " + live.ssid + "，密码不可读取，需要手动填一次")
                     else -> {
-                        saveHotspotCredentials(live.ssid, live.passphrase)
+                        saveHotspotCredentials(live.ssid, live.passphrase.orEmpty())
                         pendingCarHotspotSetup = false
                         applyWirelessLink(WirelessHotspotMode.MANUAL)
                     }
