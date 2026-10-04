@@ -1,15 +1,15 @@
-name: Build PSA CarPlay wired foundation
+name: PSA CarPlay hotspot and video telemetry experiment
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, feature/psa-0.2.2-hotspot-video-diagnostics]
 permissions:
   contents: write
 concurrency:
   group: psa-foundation-${{ github.ref }}
   cancel-in-progress: false
 env:
-  RELEASE_TAG: v0.2.1-foundation-dev
+  RELEASE_TAG: v0.2.2-telemetry-hotspot-dev
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -33,6 +33,7 @@ jobs:
           base64 -d patches/psa-main-0.2.1.patch.gz.b64 | gzip -d > "$RUNNER_TEMP/psa-foundation.patch"
           git -C upstream apply --check "$RUNNER_TEMP/psa-foundation.patch"
           git -C upstream apply "$RUNNER_TEMP/psa-foundation.patch"
+          python3 patches/psa-hotspot-video-0.2.2.py
       - name: Provision existing upstream runtime authentication
         run: |
           curl --fail --location --retry 3 https://github.com/shihabal3amri/DiPlay/releases/download/v0.2.10/DiPlay-0.2.10.apk --output "$RUNNER_TEMP/upstream.apk"
@@ -55,14 +56,14 @@ jobs:
           unzip -l "$APK" | grep -q 'assets/offline-mfi/identity.pk8'
           unzip -l "$APK" | grep -q 'assets/offline-mfi/certificate.p7b'
           mkdir -p out
-          cp "$APK" out/PSA-CarPlay-0.2.1-Android9-dev.apk
+          cp "$APK" out/PSA-CarPlay-0.2.2-Android9-perf-hotspot-dev.apk
           SDK_TOOL="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -n 1)"
           "$SDK_TOOL" dump badging "$APK" > out/APK-INFO.txt
           grep -q "name='com.psa.carplay.dev'" out/APK-INFO.txt
           grep -q "sdkVersion:'28'" out/APK-INFO.txt
           cp RELEASE-NOTES-0.2.1.md out/
           cd out
-          sha256sum PSA-CarPlay-0.2.1-Android9-dev.apk > SHA256SUMS.txt
+          sha256sum PSA-CarPlay-0.2.2-Android9-perf-hotspot-dev.apk > SHA256SUMS.txt
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
@@ -71,11 +72,12 @@ jobs:
           if-no-files-found: error
           retention-days: 30
       - name: Publish development prerelease
+        if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --title 'PSA CarPlay 0.2.1 有线基础开发版' --prerelease --notes-file RELEASE-NOTES-0.2.1.md
+            gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --title 'PSA CarPlay 0.2.2 无线性能监测与热点自动同步测试版' --prerelease --notes-file RELEASE-NOTES-0.2.1.md
           fi
           gh release upload "$RELEASE_TAG" out/* --clobber
       - name: Remove temporary credentials
