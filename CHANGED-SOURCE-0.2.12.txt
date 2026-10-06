@@ -24,6 +24,7 @@ shared/src/main/java/com/shilapi/xcertplay/network/SessionHealth.kt
 shared/src/main/java/com/shilapi/xcertplay/network/SystemHotspotManager.kt
 shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt
 shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayRuntimeConfig.kt
+shared/src/main/java/com/shilapi/xcertplay/orchestration/PsaConnectionState.kt
 shared/src/main/java/com/shilapi/xcertplay/transport/Iap2WirelessControlClient.kt
 shared/src/test/java/com/shilapi/xcertplay/airplay/SessionTerminalEventTest.kt
 shared/src/test/java/com/shilapi/xcertplay/network/HandoffPolicyTest.kt
