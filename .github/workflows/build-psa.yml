@@ -1,6 +1,8 @@
-name: Build PSA CarPlay Android 9 P2P experiment
+name: Build PSA CarPlay 0.2.10 LAN fast connect
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
 permissions:
@@ -9,7 +11,7 @@ concurrency:
   group: psa-hotspot-${{ github.ref }}
   cancel-in-progress: false
 env:
-  RELEASE_TAG: v0.2.8-p2p-dev
+  RELEASE_TAG: v0.2.10-direct-lifecycle-dev
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -30,9 +32,14 @@ jobs:
         run: |
           git clone --depth 1 --branch v0.2.10 https://github.com/shihabal3amri/DiPlay.git upstream
           test "$(git -C upstream rev-parse HEAD)" = "3e43e25c55921bdf5149f5f92851acf202ed353a"
-          base64 -d patches/psa-main-0.2.8.patch.gz.b64 | gzip -d > "$RUNNER_TEMP/psa-foundation.patch"
+          base64 -d patches/psa-main-0.2.10.patch.gz.b64 | gzip -d > "$RUNNER_TEMP/psa-foundation.patch"
           git -C upstream apply --check "$RUNNER_TEMP/psa-foundation.patch"
           git -C upstream apply "$RUNNER_TEMP/psa-foundation.patch"
+          git -C upstream worktree add --detach "$RUNNER_TEMP/psa-baseline" HEAD
+          base64 -d patches/psa-main-0.2.9.patch.gz.b64 | gzip -d > "$RUNNER_TEMP/psa-0.2.8.patch"
+          git -C "$RUNNER_TEMP/psa-baseline" apply "$RUNNER_TEMP/psa-0.2.8.patch"
+          python3 scripts/compare_apk_signatures.py --self-test
+          python3 scripts/verify_psa_delta.py "$RUNNER_TEMP/psa-baseline" upstream > "$RUNNER_TEMP/PSA-SOURCE-CHECK.txt"
       - name: Provision existing upstream runtime authentication
         run: |
           curl --fail --location --retry 3 https://github.com/shihabal3amri/DiPlay/releases/download/v0.2.10/DiPlay-0.2.10.apk --output "$RUNNER_TEMP/upstream.apk"
@@ -47,7 +54,7 @@ jobs:
         run: |
           cd upstream
           chmod +x gradlew
-          ./gradlew :shared:testDebugUnitTest --tests "com.shilapi.xcertplay.airplay.PsaStandardCarPlayProfileTest" --tests "com.shilapi.xcertplay.network.LegacyP2pOwnershipTest" --tests "com.shilapi.xcertplay.network.P2pAddressSelectionTest" --tests "com.shilapi.xcertplay.network.RetainedP2pGroupTest" --tests "com.shilapi.xcertplay.network.ControlProbeSourceTest" --tests "com.shilapi.xcertplay.network.CarPlayBonjourTest" --tests "com.shilapi.xcertplay.network.P2pStartupRecoveryTest" :common:testDebugUnitTest --tests "com.shilapi.xcertplay.HotspotModeMigrationTest" --tests "com.shilapi.xcertplay.CarPlayHostDisplaySizeTest" :mobile:assembleStandaloneDebug --stacktrace
+          ./gradlew :shared:testDebugUnitTest --tests "com.shilapi.xcertplay.airplay.PsaStandardCarPlayProfileTest" --tests "com.shilapi.xcertplay.network.LegacyP2pOwnershipTest" --tests "com.shilapi.xcertplay.network.P2pAddressSelectionTest" --tests "com.shilapi.xcertplay.network.RetainedP2pGroupTest" --tests "com.shilapi.xcertplay.network.ControlProbeSourceTest" --tests "com.shilapi.xcertplay.network.CarPlayBonjourTest" --tests "com.shilapi.xcertplay.network.P2pStartupRecoveryTest" --tests "com.shilapi.xcertplay.network.DirectLifecycleTest" --tests "com.shilapi.xcertplay.network.LanPolicyTest" --tests "com.shilapi.xcertplay.network.AirPlayPortSelectorTest" --tests "com.shilapi.xcertplay.orchestration.LanAttemptDiagnosticsTest" --tests "com.shilapi.xcertplay.orchestration.DirectTestStageTest" --tests "com.shilapi.xcertplay.transport.Iap2WiredControlClientTest" --tests "com.shilapi.xcertplay.transport.Iap2WirelessControlClientTest" --tests "com.shilapi.xcertplay.transport.UsbMuxIssue100RegressionTest" :common:testDebugUnitTest --tests "com.shilapi.xcertplay.LanBonjourLifecycleTest" --tests "com.shilapi.xcertplay.LanNetworkManagerTest" --tests "com.shilapi.xcertplay.HotspotModeMigrationTest" --tests "com.shilapi.xcertplay.CarPlayHostDisplaySizeTest" --tests "com.shilapi.xcertplay.ControllerCloseGateTest" --tests "com.shilapi.xcertplay.PsaReportStorageTest" --tests "com.shilapi.xcertplay.DiagnosticExportStoreTest" --tests "com.shilapi.xcertplay.DiagnosticRedactorTest" :mobile:assembleStandaloneDebug --stacktrace
       - name: Verify package and stage deliverables
         run: |
           APK="$(find upstream/mobile/build/outputs/apk/debug -maxdepth 1 -name '*.apk' -type f | head -n 1)"
@@ -55,29 +62,42 @@ jobs:
           unzip -l "$APK" | grep -q 'assets/offline-mfi/identity.pk8'
           unzip -l "$APK" | grep -q 'assets/offline-mfi/certificate.p7b'
           mkdir -p out
-          cp "$APK" out/PSA-CarPlay-0.2.8-Android9-dev.apk
+          cp "$APK" out/PSA-CarPlay-0.2.10-Android9-dev.apk
           SDK_TOOL="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -n 1)"
           "$SDK_TOOL" dump badging "$APK" > out/APK-INFO.txt
           grep -q "name='com.psa.carplay.dev'" out/APK-INFO.txt
           grep -q "sdkVersion:'28'" out/APK-INFO.txt
-          cp RELEASE-NOTES-0.2.8.md out/
+          SIGN_TOOL="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
+          "$SIGN_TOOL" verify --verbose --print-certs "$APK" > out/APK-SIGNATURE.txt
+          mkdir -p "$RUNNER_TEMP/baseline"
+          if curl --fail --location --max-time 60 https://github.com/z892137292/psa-CarPlay/releases/download/v0.2.8-p2p-dev/PSA-CarPlay-0.2.8-Android9-dev.apk --output "$RUNNER_TEMP/baseline/0.2.8.apk"; then
+            "$SIGN_TOOL" verify --verbose --print-certs "$RUNNER_TEMP/baseline/0.2.8.apk" > out/BASELINE-0.2.8-SIGNATURE.txt
+            python3 scripts/compare_apk_signatures.py out/APK-SIGNATURE.txt out/BASELINE-0.2.8-SIGNATURE.txt > out/APK-COMPATIBILITY.txt
+          else
+            echo 'Baseline certificate unavailable; overwrite-install compatibility UNKNOWN.' > out/APK-COMPATIBILITY.txt
+          fi
+          cp RELEASE-NOTES-0.2.10.md LAN-ROOT-CAUSE-0.2.10.md CHANGED-SOURCE-0.2.10.txt out/
+          cp "$RUNNER_TEMP/PSA-SOURCE-CHECK.txt" out/
+          cp -r upstream/shared/build/test-results/testDebugUnitTest out/shared-test-results
+          cp -r upstream/common/build/test-results/testDebugUnitTest out/common-test-results
           cd out
           sha256sum *.apk > SHA256SUMS.txt
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PSA-CarPlay-0.2.8-Android9-dev
+          name: PSA-CarPlay-0.2.10-Android9-dev
           path: out/*
           if-no-files-found: error
           retention-days: 30
-      - name: Publish development prerelease
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --title 'PSA CarPlay 0.2.8 Android 9 Wi-Fi Direct 实验版' --prerelease --notes-file RELEASE-NOTES-0.2.8.md
-          fi
-          gh release upload "$RELEASE_TAG" out/* --clobber
+      - name: Preserve build and test diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PSA-0.2.10-failure-diagnostics
+          path: |
+            upstream/shared/build/reports/tests/
+            upstream/common/build/reports/tests/
+          if-no-files-found: ignore
       - name: Remove temporary credentials
         if: always()
         run: rm -rf "$RUNNER_TEMP/psa-auth" "$RUNNER_TEMP/upstream.apk"
