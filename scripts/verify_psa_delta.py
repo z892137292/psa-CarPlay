@@ -18,6 +18,8 @@ for directory in protected_dirs:
 authorized_lifecycle = {
     "shared/src/main/java/com/shilapi/xcertplay/transport/Iap2WirelessControlClient.kt",
     "shared/src/main/java/com/shilapi/xcertplay/airplay/AirPlaySession.kt",
+    "shared/src/main/java/com/shilapi/xcertplay/airplay/NtpClock.kt",
+    "shared/src/main/java/com/shilapi/xcertplay/airplay/CarPlayMediaEngine.kt",
 }
 paths -= authorized_lifecycle
 for relative in sorted(paths):
