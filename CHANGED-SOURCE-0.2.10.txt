@@ -1,8 +1,9 @@
-Protected runtime files unchanged: 95
+Protected runtime/encoding checks passed: 95 (optional pre-send hook excluded)
 Changed source files relative to reconstructed 0.2.9:
 common/build.gradle.kts
 common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
 common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
+common/src/test/java/com/shilapi/xcertplay/LanBonjourLifecycleTest.kt
 common/src/test/java/com/shilapi/xcertplay/LanNetworkManagerTest.kt
 mobile/build.gradle.kts
 shared/src/main/java/com/shilapi/xcertplay/network/AirPlayPortSelector.kt
@@ -15,5 +16,6 @@ shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt
 shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayRuntimeConfig.kt
 shared/src/main/java/com/shilapi/xcertplay/orchestration/LanAttemptDiagnostics.kt
 shared/src/main/java/com/shilapi/xcertplay/transport/Iap2WirelessControlClient.kt
+shared/src/test/java/com/shilapi/xcertplay/network/AirPlayPortSelectorTest.kt
 shared/src/test/java/com/shilapi/xcertplay/network/LanPolicyTest.kt
 shared/src/test/java/com/shilapi/xcertplay/orchestration/LanAttemptDiagnosticsTest.kt

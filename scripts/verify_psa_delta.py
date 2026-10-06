@@ -44,6 +44,6 @@ for file in sorted(candidate.rglob("*")):
     if not previous.is_file() or previous.read_bytes() != file.read_bytes():
         assert file.suffix not in {".pk8", ".p7b", ".key", ".pem", ".jks", ".keystore", ".p12", ".pfx"}, relative
         changes.append(str(relative))
-print(f"Protected runtime files unchanged: {len(paths)}")
+print(f"Protected runtime/encoding checks passed: {len(paths)} (optional pre-send hook excluded)")
 print("Changed source files relative to reconstructed 0.2.9:")
 print("\n".join(changes))
