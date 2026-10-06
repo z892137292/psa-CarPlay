@@ -3,6 +3,7 @@ Changed source files relative to reconstructed 0.2.11:
 common/src/main/java/com/shilapi/xcertplay/AirPlayPersistence.kt
 common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
 common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
+common/src/main/java/com/shilapi/xcertplay/SessionLogFile.kt
 common/src/test/java/com/shilapi/xcertplay/LanNetworkManagerTest.kt
 common/src/test/java/com/shilapi/xcertplay/SystemHotspotManagerTest.kt
 mobile/build.gradle.kts
@@ -13,6 +14,7 @@ shared/src/main/java/com/shilapi/xcertplay/iap2/message/Iap2Messages.kt
 shared/src/main/java/com/shilapi/xcertplay/network/AccessPointIdentity.kt
 shared/src/main/java/com/shilapi/xcertplay/network/BoundedAddressHandoff.kt
 shared/src/main/java/com/shilapi/xcertplay/network/CarPlayBonjour.kt
+shared/src/main/java/com/shilapi/xcertplay/network/CarPlayVpnService.kt
 shared/src/main/java/com/shilapi/xcertplay/network/ControlProbeRetry.kt
 shared/src/main/java/com/shilapi/xcertplay/network/ExistingSystemAp.kt
 shared/src/main/java/com/shilapi/xcertplay/network/ExistingWifiManager.kt
@@ -23,6 +25,7 @@ shared/src/main/java/com/shilapi/xcertplay/network/SystemHotspotManager.kt
 shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt
 shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayRuntimeConfig.kt
 shared/src/main/java/com/shilapi/xcertplay/transport/Iap2WirelessControlClient.kt
+shared/src/test/java/com/shilapi/xcertplay/airplay/SessionTerminalEventTest.kt
 shared/src/test/java/com/shilapi/xcertplay/network/HandoffPolicyTest.kt
 shared/src/test/java/com/shilapi/xcertplay/network/SessionHealthTest.kt
 shared/src/test/java/com/shilapi/xcertplay/transport/HandoffEncodingTest.kt
