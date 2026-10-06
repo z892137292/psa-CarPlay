@@ -6,7 +6,7 @@
 
 固定 DiPlay v0.2.10 提交 `3e43e25c55921bdf5149f5f92851acf202ed353a`，单次应用 `patches/psa-main-0.2.11.patch.gz.b64`。不覆盖 0.2.8/0.2.9/0.2.10 补丁、Tag、Release 或 APK。
 
-本分支通过 Actions 测试后生成独立开发 APK artifact，不自动创建 Release。草稿 [PR（构建后补充）](https://github.com/z892137292/psa-CarPlay/pulls) 尚未合并到 main。
+本分支通过 Actions 测试后生成独立开发 APK artifact，不自动创建 Release。草稿 [PR #4](https://github.com/z892137292/psa-CarPlay/pull/4) 尚未合并到 main。
 
 LAN 模式请在主设置保存路由器 SSID/密码，两台设备连接同一个 Wi-Fi；不要求外网、不创建 Direct。无法验证当前网络身份时暂停连接，不盲用旧 SSID。
 

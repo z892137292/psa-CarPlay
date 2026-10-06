@@ -40,6 +40,8 @@ MFi计时改为 identification accepted 后到 authentication accepted，包含�
 
 DiPlay-0.2.13.apk SHA256 aed9eac786e7c0e80a2929dc2f0c2e1d0df318ca8fd83ae7c2988a98bb4cd7e6。APK构建元数据指向公开提交6fb0fa4a09e77a84a437da5159147a6f6141ed61，DEX包含ExistingWifiManager、CarPlayBonjour和旧多Wi-Fi错误文本。按该公开提交比较，不将后来tag/main当成二进制的确切实现；未进行完整DEX反编译，不能证明编译/混淆后的所有运行细节一致。旧成功IPv4和新成功IPv6均有日志基础，但WAN、地址优先级的因果未知。
 
+公开提交的实际差异：0.2.13 的 ExistingWifiManager 按 Wi-Fi Network 句柄数量直接拒绝多个对象；地址列表本来就含 IPv4 和有 scope 的链路本地 IPv6，并非纯 IPv4实现。其 CarPlayBonjour.start 在 registerService 后直接进入下一阶段，没有等待真实公告完成。因此旧版较短 Bonjour 返回时间不能等同于服务已可被 iPhone 使用；本次保留就绪屏障，优化内部探测调度，而不照搬旧版过早返回。旧版 dns.close 亦顺序执行并忽略异常，本次等待并行关闭且将异常保留为不干净退出。
+
 ## 实测矩阵（未执行）
 
 停车、同一APP/iOS/路由器/SSID/BSSID/位置、5GHz信道44、40MHz。双栈WAN开/关、IPv4实验WAN开/关各10次；记录成功数、bonjour_ready、start_session到first_tcp、first_frame总时长及P50/P95，失败单独计数。不要把重复历史报告算新样本。
