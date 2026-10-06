@@ -21,6 +21,7 @@ shared/src/main/java/com/shilapi/xcertplay/network/LanMdnsTiming.kt
 shared/src/main/java/com/shilapi/xcertplay/network/LanNetworkManager.kt
 shared/src/main/java/com/shilapi/xcertplay/network/LanNetworkSelection.kt
 shared/src/main/java/com/shilapi/xcertplay/network/LanPolicy.kt
+shared/src/main/java/com/shilapi/xcertplay/network/WirelessHostAddress.kt
 shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt
 shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayRuntimeConfig.kt
 shared/src/main/java/com/shilapi/xcertplay/orchestration/LanCredentialsValidation.kt
@@ -30,6 +31,7 @@ shared/src/test/java/com/shilapi/xcertplay/network/LanNetworkSelectionTest.kt
 Deleted source files relative to reconstructed 0.2.10:
 common/src/main/java/com/shilapi/xcertplay/PsaDirectSafety.kt
 common/src/main/java/com/shilapi/xcertplay/PsaDirectService.kt
+common/src/test/java/com/shilapi/xcertplay/LocalOnlyHotspotManagerTest.kt
 common/src/test/java/com/shilapi/xcertplay/WifiP2pGroupManagerTest.kt
 hotspothelper/build.gradle.kts
 hotspothelper/src/main/AndroidManifest.xml
