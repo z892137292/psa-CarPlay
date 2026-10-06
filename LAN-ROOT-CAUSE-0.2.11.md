@@ -20,7 +20,7 @@ CarPlayBonjour.start -> JmDNS 3.6.3 Prober.start：新主机尚未 announced 时
 
 ## Network 选择与地址路径
 
-ExistingWifiManager -> LanNetworkSelection：排除 VPN、缺少 LinkProperties/有效接口/地址的历史句柄，以接口+选定地址集合归并；同链路多个句柄选当前 Wi-Fi 默认句柄或等价别名。不同接口/地址仅在有具体默认 Wi-Fi 证据时选择它，否则 NETWORK_AMBIGUOUS，暂停自动重试。蜂窝/VPN默认网络不被当成目标 Wi-Fi；不修改默认路由。
+ExistingWifiManager -> LanNetworkSelection：排除 VPN、缺少 LinkProperties/有效接口/地址的历史句柄；地址必须同时存在于真实网卡，忽略仅残留在旧 LinkProperties 中的地址，以接口+选定地址集合归并；同链路多个句柄选当前 Wi-Fi 默认句柄或等价别名。不同接口/地址仅在有具体默认 Wi-Fi 证据时选择它，否则 NETWORK_AMBIGUOUS，暂停自动重试。蜂窝/VPN默认网络不被当成目标 Wi-Fi；不修改默认路由。
 
 onLost 可只换到相同接口、相同地址的另一存活句柄；真正地址/接口变化结束本轮。仍核验实时 SSID，不可读时必须匹配此前已验证的当前 BSSID。新增候选/链路数、接口、IPv4/IPv6及scope元数据；严格格式的 LAN_ADDRESS 保留真实地址，不输出密码或认证数据。
 
