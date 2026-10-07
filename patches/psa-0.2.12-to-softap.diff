@@ -3196,7 +3196,7 @@ index 0000000..fca1e25
 +class ManualHotspotManager(context: Context,confirmed: Boolean,log: (String)->Unit={}): LanNetworkManager by SystemHotspotManager(context,confirmed,log)
 diff --git a/shared/src/main/java/com/shilapi/xcertplay/network/NetworkIdentityResolver.kt b/shared/src/main/java/com/shilapi/xcertplay/network/NetworkIdentityResolver.kt
 new file mode 100644
-index 0000000..e83ce5b
+index 0000000..f9ff7b6
 --- /dev/null
 +++ b/shared/src/main/java/com/shilapi/xcertplay/network/NetworkIdentityResolver.kt
 @@ -0,0 +1,69 @@
@@ -3258,7 +3258,7 @@ index 0000000..e83ce5b
 +        @Suppress("DEPRECATION")
 +        val legacy=if(station && permission && location && (modern==null || normalizeSsid(modern.ssid)==null)) runCatching { context.getSystemService(WifiManager::class.java)?.connectionInfo }.getOrNull() else null
 +        // Legacy has process-wide scope: use only when a single physical STA link is visible.
-+        val links=cm?.allNetworks.orEmpty().filter { cm?.getNetworkCapabilities(it)?.let { caps -> caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) && !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) }==true }.mapNotNull { cm?.getLinkProperties(it)?.interfaceName }.distinct()
++        val links=physicalLinks
 +        val info=modern?.takeIf { normalizeSsid(it.ssid)!=null } ?: legacy?.takeIf { links.size==1 && it.networkId>=0 } ?: modern
 +        val raw=runCatching { info?.ssid }.getOrNull()
 +        val ssid=if(permission && location) normalizeSsid(raw) else null
