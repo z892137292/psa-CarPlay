@@ -1,10 +1,10 @@
-name: Build PSA CarPlay 0.2.12 USB System Hotspot LAN
+name: Build PSA Bluetooth SoftAP transport
 on:
   workflow_dispatch:
   pull_request:
-    branches: [main]
+    branches: [main, feature/psa-bluetooth-softap]
   push:
-    branches: [main]
+    branches: [main, feature/psa-bluetooth-softap]
 permissions:
   contents: write
 concurrency:
@@ -30,15 +30,14 @@ jobs:
         run: |
           git clone --depth 1 --branch v0.2.10 https://github.com/shihabal3amri/DiPlay.git upstream
           test "$(git -C upstream rev-parse HEAD)" = "3e43e25c55921bdf5149f5f92851acf202ed353a"
-          base64 -d patches/psa-main-0.2.12.patch.gz.b64 | gzip -d > "$RUNNER_TEMP/psa-foundation.patch"
+          base64 -d patches/psa-main-0.2.14-softap.patch.gz.b64 | gzip -d > "$RUNNER_TEMP/psa-foundation.patch"
           git -C upstream apply --check "$RUNNER_TEMP/psa-foundation.patch"
           git -C upstream apply "$RUNNER_TEMP/psa-foundation.patch"
           git -C upstream worktree add --detach "$RUNNER_TEMP/psa-baseline" HEAD
-          base64 -d patches/psa-main-0.2.11.patch.gz.b64 | gzip -d > "$RUNNER_TEMP/psa-0.2.8.patch"
-          git -C "$RUNNER_TEMP/psa-baseline" apply "$RUNNER_TEMP/psa-0.2.8.patch"
-          python3 scripts/verify_psa_ui_regression.py "$RUNNER_TEMP/psa-baseline" upstream
+          base64 -d patches/psa-main-0.2.12.patch.gz.b64 | gzip -d > "$RUNNER_TEMP/psa-working-baseline.patch"
+          git -C "$RUNNER_TEMP/psa-baseline" apply "$RUNNER_TEMP/psa-working-baseline.patch"
           python3 scripts/compare_apk_signatures.py --self-test
-          python3 scripts/verify_psa_delta.py "$RUNNER_TEMP/psa-baseline" upstream > "$RUNNER_TEMP/PSA-SOURCE-CHECK.txt"
+          python3 scripts/verify_softap_scope.py "$RUNNER_TEMP/psa-baseline" upstream > "$RUNNER_TEMP/PSA-SOURCE-CHECK.txt"
       - name: Provision existing upstream runtime authentication
         run: |
           curl --fail --location --retry 3 https://github.com/shihabal3amri/DiPlay/releases/download/v0.2.10/DiPlay-0.2.10.apk --output "$RUNNER_TEMP/upstream.apk"
@@ -53,7 +52,8 @@ jobs:
         run: |
           cd upstream
           chmod +x gradlew
-          ./gradlew :shared:testDebugUnitTest --tests "com.shilapi.xcertplay.network.HandoffPolicyTest" --tests "com.shilapi.xcertplay.network.SessionHealthTest" --tests "com.shilapi.xcertplay.transport.HandoffEncodingTest" --tests "com.shilapi.xcertplay.airplay.SessionTerminalEventTest" --tests "com.shilapi.xcertplay.airplay.CarPlayMediaEngineTest" --tests "com.shilapi.xcertplay.airplay.PsaStandardCarPlayProfileTest" --tests "com.shilapi.xcertplay.network.ControlProbeSourceTest" --tests "com.shilapi.xcertplay.network.CarPlayBonjourTest" --tests "com.shilapi.xcertplay.network.LanPolicyTest" --tests "com.shilapi.xcertplay.network.LanNetworkSelectionTest" --tests "com.shilapi.xcertplay.network.LanMdnsTimingTest" --tests "com.shilapi.xcertplay.network.AirPlayPortSelectorTest" --tests "com.shilapi.xcertplay.orchestration.LanAttemptDiagnosticsTest" --tests "com.shilapi.xcertplay.transport.Iap2WiredControlClientTest" --tests "com.shilapi.xcertplay.transport.Iap2WirelessControlClientTest" --tests "com.shilapi.xcertplay.transport.UsbMuxIssue100RegressionTest" :common:testDebugUnitTest --tests "com.shilapi.xcertplay.SystemHotspotManagerTest" --tests "com.shilapi.xcertplay.LanBonjourLifecycleTest" --tests "com.shilapi.xcertplay.LanNetworkManagerTest" --tests "com.shilapi.xcertplay.HotspotModeMigrationTest" --tests "com.shilapi.xcertplay.CarPlayHostDisplaySizeTest" --tests "com.shilapi.xcertplay.CarPlayHostPreparationTest" --tests "com.shilapi.xcertplay.ControllerCloseGateTest" --tests "com.shilapi.xcertplay.PsaReportStorageTest" --tests "com.shilapi.xcertplay.DiagnosticExportStoreTest" --tests "com.shilapi.xcertplay.DiagnosticRedactorTest" :mobile:assembleStandaloneDebug --stacktrace
+          ./gradlew :shared:testDebugUnitTest --tests "com.shilapi.xcertplay.orchestration.BoundPhoneSessionTest" --tests "com.shilapi.xcertplay.network.SoftApPolicyTest" --tests "com.shilapi.xcertplay.network.HandoffPolicyTest" --tests "com.shilapi.xcertplay.network.SessionHealthTest" --tests "com.shilapi.xcertplay.transport.HandoffEncodingTest" --tests "com.shilapi.xcertplay.airplay.SessionTerminalEventTest" --tests "com.shilapi.xcertplay.airplay.CarPlayMediaEngineTest" --tests "com.shilapi.xcertplay.airplay.PsaStandardCarPlayProfileTest" --tests "com.shilapi.xcertplay.network.ControlProbeSourceTest" --tests "com.shilapi.xcertplay.network.CarPlayBonjourTest" --tests "com.shilapi.xcertplay.network.LanPolicyTest" --tests "com.shilapi.xcertplay.network.LanNetworkSelectionTest" --tests "com.shilapi.xcertplay.network.LanMdnsTimingTest" --tests "com.shilapi.xcertplay.network.AirPlayPortSelectorTest" --tests "com.shilapi.xcertplay.orchestration.LanAttemptDiagnosticsTest" --tests "com.shilapi.xcertplay.transport.Iap2WiredControlClientTest" --tests "com.shilapi.xcertplay.transport.Iap2WirelessControlClientTest" --tests "com.shilapi.xcertplay.transport.UsbMuxIssue100RegressionTest" :common:testDebugUnitTest --tests "com.shilapi.xcertplay.SystemHotspotManagerTest" --tests "com.shilapi.xcertplay.LanBonjourLifecycleTest" --tests "com.shilapi.xcertplay.LanNetworkManagerTest" --tests "com.shilapi.xcertplay.HotspotModeMigrationTest" --tests "com.shilapi.xcertplay.CarPlayHostDisplaySizeTest" --tests "com.shilapi.xcertplay.CarPlayHostPreparationTest" --tests "com.shilapi.xcertplay.ControllerCloseGateTest" --tests "com.shilapi.xcertplay.PsaReportStorageTest" --tests "com.shilapi.xcertplay.DiagnosticExportStoreTest" --tests "com.shilapi.xcertplay.DiagnosticRedactorTest" :mobile:assembleStandaloneDebug --stacktrace
+          ./gradlew :shared:lintDebug :common:lintDebug :mobile:lintDebug --continue --stacktrace
       - name: Verify package and stage deliverables
         run: |
           APK="$(find upstream/mobile/build/outputs/apk/debug -maxdepth 1 -name '*.apk' -type f | head -n 1)"
@@ -61,7 +61,7 @@ jobs:
           unzip -l "$APK" | grep -q 'assets/offline-mfi/identity.pk8'
           unzip -l "$APK" | grep -q 'assets/offline-mfi/certificate.p7b'
           mkdir -p out
-          cp "$APK" out/PSA-CarPlay-0.2.12-Android9-dev.apk
+          cp "$APK" out/PSA-CarPlay-0.2.14-SoftAP-Android9-dev.apk
           SDK_TOOL="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -n 1)"
           "$SDK_TOOL" dump badging "$APK" > out/APK-INFO.txt
           grep -q "name='com.psa.carplay.dev'" out/APK-INFO.txt
@@ -75,7 +75,7 @@ jobs:
           else
             echo 'Baseline certificate unavailable; overwrite-install compatibility UNKNOWN.' > out/APK-COMPATIBILITY.txt
           fi
-          cp RELEASE-NOTES-0.2.12.md LAN-ROOT-CAUSE-0.2.12.md CHANGED-SOURCE-0.2.12.txt out/
+          cp SOFTAP-IMPLEMENTATION.md CHANGED-SOURCE-SOFTAP.txt patches/psa-0.2.12-to-softap.diff out/
           cp "$RUNNER_TEMP/PSA-SOURCE-CHECK.txt" out/
           cp -r upstream/shared/build/test-results/testDebugUnitTest out/shared-test-results
           cp -r upstream/common/build/test-results/testDebugUnitTest out/common-test-results
@@ -84,7 +84,7 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PSA-CarPlay-0.2.12-Android9-dev
+          name: PSA-CarPlay-0.2.14-SoftAP-Android9-dev
           path: out/*
           if-no-files-found: error
           retention-days: 30
@@ -92,10 +92,13 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: PSA-0.2.12-failure-diagnostics
+          name: PSA-SoftAP-failure-diagnostics
           path: |
             upstream/shared/build/reports/tests/
             upstream/common/build/reports/tests/
+            upstream/shared/build/reports/lint*
+            upstream/common/build/reports/lint*
+            upstream/mobile/build/reports/lint*
           if-no-files-found: ignore
       - name: Remove temporary credentials
         if: always()
