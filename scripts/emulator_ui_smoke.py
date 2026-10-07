@@ -52,8 +52,8 @@ atexit.register(save_logcat)
 apk=next(Path('out').glob('*.apk'));adb('install','-r',str(apk))
 for perm in ['RECORD_AUDIO','ACCESS_FINE_LOCATION','ACCESS_COARSE_LOCATION','WRITE_EXTERNAL_STORAGE']:
  subprocess.run(['adb','shell','pm','grant',PKG,'android.permission.'+perm],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-adb('shell','wm','size','2250x1080');adb('shell','wm','density','160')
-assert 'Override size: 2250x1080' in adb('shell','wm','size'),'Emulator clamped requested head-unit dimensions'
+adb('shell','wm','size','1920x720');adb('shell','wm','density','160')
+assert 'Override size: 1920x720' in adb('shell','wm','size'),'Emulator clamped requested head-unit dimensions'
 # Android's first-use immersive tutorial obscures the app hierarchy; configure the test device.
 adb('shell','settings','put','secure','immersive_mode_confirmations','confirmed')
 adb('shell','am','force-stop',PKG);launch(None,cold=True)
@@ -69,14 +69,20 @@ subprocess.run(['adb','shell','run-as',PKG,'sh','-c',"'mkdir -p shared_prefs; ca
 adb('shell','am','force-stop',PKG);launch(cold=True);check('cold-home','PSA CarPlay','连接手机')
 tap('手机');check('phones','未发现已配对')
 tap('连接');check('connection','车机热点')
+tap('诊断');check('diagnostics','连接诊断')
+tap('设置');check('settings-1920','Wi-Fi 设置','车机热点设置')
+tap('Wi-Fi 设置');time.sleep(1)
+assert 'WifiSettings' in adb('shell','dumpsys','activity','activities'), 'Wi-Fi button did not open WLAN settings'
+launch(cold=True)
+tap('连接');check('connection-return','车机热点')
 tap('CarPlay');tap('连接手机');check('connecting-no-phone','PSA CarPlay','取消连接')
-time.sleep(2);check('still-connecting-no-frame','取消连接')
+time.sleep(2);check('network-not-ready','取消连接')
 for i in range(10):
  tap('取消连接');time.sleep(1)
  launch();check('retry-home-'+str(i),'连接手机')
  tap('连接手机');check('retry-loading-'+str(i),'取消连接')
-adb('shell','wm','size','1080x2250');time.sleep(1);check('portrait','PSA CarPlay','取消连接')
-adb('shell','wm','size','2250x1080');time.sleep(1);check('landscape-restored','PSA CarPlay','取消连接')
+adb('shell','wm','size','720x1920');time.sleep(1);check('portrait','PSA CarPlay','取消连接')
+adb('shell','wm','size','1920x720');time.sleep(1);check('landscape-restored','PSA CarPlay','取消连接')
 adb('shell','input','keyevent','3');launch(host=True);check('foreground-no-frame','取消连接')
 # Grant only the emulator's real VPN prerequisite; no USB device/session is injected.
 adb('shell','appops','set',PKG,'ACTIVATE_VPN','allow')

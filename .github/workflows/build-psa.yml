@@ -56,7 +56,7 @@ jobs:
         run: |
           cd upstream
           chmod +x gradlew
-          ./gradlew :shared:testDebugUnitTest --tests "com.shilapi.xcertplay.orchestration.BoundPhoneSessionTest" --tests "com.shilapi.xcertplay.network.SoftApPolicyTest" --tests "com.shilapi.xcertplay.network.HandoffPolicyTest" --tests "com.shilapi.xcertplay.network.SessionHealthTest" --tests "com.shilapi.xcertplay.transport.HandoffEncodingTest" --tests "com.shilapi.xcertplay.airplay.SessionTerminalEventTest" --tests "com.shilapi.xcertplay.airplay.CarPlayMediaEngineTest" --tests "com.shilapi.xcertplay.airplay.PsaStandardCarPlayProfileTest" --tests "com.shilapi.xcertplay.network.ControlProbeSourceTest" --tests "com.shilapi.xcertplay.network.CarPlayBonjourTest" --tests "com.shilapi.xcertplay.network.LanPolicyTest" --tests "com.shilapi.xcertplay.network.LanNetworkSelectionTest" --tests "com.shilapi.xcertplay.network.LanMdnsTimingTest" --tests "com.shilapi.xcertplay.network.AirPlayPortSelectorTest" --tests "com.shilapi.xcertplay.orchestration.LanAttemptDiagnosticsTest" --tests "com.shilapi.xcertplay.transport.Iap2WiredControlClientTest" --tests "com.shilapi.xcertplay.transport.Iap2WirelessControlClientTest" --tests "com.shilapi.xcertplay.transport.UsbMuxIssue100RegressionTest" :common:testDebugUnitTest --tests "com.shilapi.xcertplay.SoftApLifecycleTest" --tests "com.shilapi.xcertplay.SystemHotspotManagerTest" --tests "com.shilapi.xcertplay.LanBonjourLifecycleTest" --tests "com.shilapi.xcertplay.LanNetworkManagerTest" --tests "com.shilapi.xcertplay.HotspotModeMigrationTest" --tests "com.shilapi.xcertplay.CarPlayHostDisplaySizeTest" --tests "com.shilapi.xcertplay.CarPlayHostPreparationTest" --tests "com.shilapi.xcertplay.CarPlayHostStartupTest" --tests "com.shilapi.xcertplay.CarPlayUiStateTest" --tests "com.shilapi.xcertplay.CarPlayShellStartupTest" --tests "com.shilapi.xcertplay.ControllerCloseGateTest" --tests "com.shilapi.xcertplay.PsaReportStorageTest" --tests "com.shilapi.xcertplay.DiagnosticExportStoreTest" --tests "com.shilapi.xcertplay.DiagnosticRedactorTest" :mobile:assembleStandaloneDebug --stacktrace
+          ./gradlew :shared:testDebugUnitTest --tests "com.shilapi.xcertplay.orchestration.ExistingLanSuccessEvidenceTest" --tests "com.shilapi.xcertplay.orchestration.BoundPhoneSessionTest" --tests "com.shilapi.xcertplay.network.SoftApPolicyTest" --tests "com.shilapi.xcertplay.network.HandoffPolicyTest" --tests "com.shilapi.xcertplay.network.SessionHealthTest" --tests "com.shilapi.xcertplay.transport.HandoffEncodingTest" --tests "com.shilapi.xcertplay.airplay.SessionTerminalEventTest" --tests "com.shilapi.xcertplay.airplay.CarPlayMediaEngineTest" --tests "com.shilapi.xcertplay.airplay.PsaStandardCarPlayProfileTest" --tests "com.shilapi.xcertplay.network.ControlProbeSourceTest" --tests "com.shilapi.xcertplay.network.CarPlayBonjourTest" --tests "com.shilapi.xcertplay.network.LanPolicyTest" --tests "com.shilapi.xcertplay.network.LanNetworkSelectionTest" --tests "com.shilapi.xcertplay.network.LanMdnsTimingTest" --tests "com.shilapi.xcertplay.network.AirPlayPortSelectorTest" --tests "com.shilapi.xcertplay.orchestration.LanAttemptDiagnosticsTest" --tests "com.shilapi.xcertplay.transport.Iap2WiredControlClientTest" --tests "com.shilapi.xcertplay.transport.Iap2WirelessControlClientTest" --tests "com.shilapi.xcertplay.transport.UsbMuxIssue100RegressionTest" :common:testDebugUnitTest --tests "com.shilapi.xcertplay.NetworkIdentityResolverTest" --tests "com.shilapi.xcertplay.SoftApLifecycleTest" --tests "com.shilapi.xcertplay.SystemHotspotManagerTest" --tests "com.shilapi.xcertplay.LanBonjourLifecycleTest" --tests "com.shilapi.xcertplay.LanNetworkManagerTest" --tests "com.shilapi.xcertplay.HotspotModeMigrationTest" --tests "com.shilapi.xcertplay.CarPlayHostDisplaySizeTest" --tests "com.shilapi.xcertplay.CarPlayHostPreparationTest" --tests "com.shilapi.xcertplay.CarPlayHostStartupTest" --tests "com.shilapi.xcertplay.CarPlayUiStateTest" --tests "com.shilapi.xcertplay.CarPlayShellStartupTest" --tests "com.shilapi.xcertplay.ControllerCloseGateTest" --tests "com.shilapi.xcertplay.PsaReportStorageTest" --tests "com.shilapi.xcertplay.DiagnosticExportStoreTest" --tests "com.shilapi.xcertplay.DiagnosticRedactorTest" :mobile:assembleStandaloneDebug --stacktrace
           ./gradlew :shared:lintDebug :common:lintDebug :mobile:lintDebug --init-script ../scripts/lint-report-only.gradle --continue --stacktrace
           cd "$RUNNER_TEMP/psa-baseline"
           chmod +x gradlew
@@ -70,7 +70,7 @@ jobs:
           unzip -l "$APK" | grep -q 'assets/offline-mfi/identity.pk8'
           unzip -l "$APK" | grep -q 'assets/offline-mfi/certificate.p7b'
           mkdir -p out
-          cp "$APK" out/PSA-CarPlay-0.2.15-UI-Android9-dev.apk
+          cp "$APK" out/PSA-CarPlay-0.2.16-Network-UI-Android9-dev.apk
           SDK_TOOL="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -n 1)"
           "$SDK_TOOL" dump badging "$APK" > out/APK-INFO.txt
           grep -q "name='com.psa.carplay.dev'" out/APK-INFO.txt
@@ -85,6 +85,7 @@ jobs:
             echo 'Baseline certificate unavailable; overwrite-install compatibility UNKNOWN.' > out/APK-COMPATIBILITY.txt
           fi
           cp SOFTAP-IMPLEMENTATION.md CHANGED-SOURCE-SOFTAP.txt patches/psa-0.2.12-to-softap.diff out/
+          cp NETWORK-UI-IMPLEMENTATION.md CHANGED-SOURCE-NETWORK-UI.txt patches/psa-0.2.15-to-0.2.16-network-ui.diff out/
           cp UI-IMPLEMENTATION.md patches/psa-0.2.14-ui-fix-to-0.2.15-ui.diff "$RUNNER_TEMP/PSA-UI-SOURCE-CHECK.txt" out/
           cp "$RUNNER_TEMP/PSA-SOURCE-CHECK.txt" "$RUNNER_TEMP/PSA-LINT-COMPARISON.txt" out/
           cp -r upstream/shared/build/reports/lint* out/
@@ -114,7 +115,7 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PSA-CarPlay-0.2.15-UI-Android9-dev
+          name: PSA-CarPlay-0.2.16-Network-UI-Android9-dev
           path: out/*
           if-no-files-found: error
           retention-days: 30

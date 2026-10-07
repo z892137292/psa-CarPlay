@@ -5,6 +5,13 @@ import sys
 
 baseline,candidate=map(Path,sys.argv[1:3])
 allowed={
+ "common/src/main/java/com/shilapi/xcertplay/NetworkSettingsLauncher.kt",
+ "common/src/test/java/com/shilapi/xcertplay/NetworkIdentityResolverTest.kt",
+ "shared/src/main/java/com/shilapi/xcertplay/network/NetworkIdentityResolver.kt",
+ "shared/src/main/java/com/shilapi/xcertplay/network/ExistingWifiManager.kt",
+ "shared/src/main/java/com/shilapi/xcertplay/network/ExistingSystemAp.kt",
+ "shared/src/main/java/com/shilapi/xcertplay/orchestration/ExistingLanSuccessEvidence.kt",
+ "shared/src/test/java/com/shilapi/xcertplay/orchestration/ExistingLanSuccessEvidenceTest.kt",
  'mobile/build.gradle.kts',
  'common/src/main/java/com/shilapi/xcertplay/AirPlayPersistence.kt',
  'common/src/main/java/com/shilapi/xcertplay/BluetoothPhoneRepository.kt',
@@ -31,6 +38,6 @@ start,end='    private fun startIphone()','    private fun isBluetoothHandoffCom
 assert a[a.index(start):a.index(end)]==b[b.index(start):b.index(end)],'USB controller block changed'
 print('UI baseline: 265775013acbb20c720d280600b466261c81624f, versionCode 215')
 print('PASS: no existing source files deleted; unchanged AirPlay/USBMUX/NCM/iAP2/MFi/video/audio/touch protocol implementations')
-print('PASS: complete USB controller bring-up unchanged; Existing LAN and original SystemHotspotManager unchanged')
+print('PASS: complete USB controller bring-up unchanged; original SystemHotspotManager preserved; Existing LAN identity resolution explicitly updated')
 print('UI source files changed:')
 print('\n'.join(changed))
