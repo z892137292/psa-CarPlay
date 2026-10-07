@@ -1,0 +1,91 @@
+diff --git a/common/src/test/java/com/shilapi/xcertplay/UsbNcmClosedTunTest.kt b/common/src/test/java/com/shilapi/xcertplay/UsbNcmClosedTunTest.kt
+new file mode 100644
+index 0000000..b715877
+--- /dev/null
++++ b/common/src/test/java/com/shilapi/xcertplay/UsbNcmClosedTunTest.kt
+@@ -0,0 +1,57 @@
++package com.shilapi.xcertplay
++
++import android.os.ParcelFileDescriptor
++import com.shilapi.xcertplay.network.Ipv6NcmBridge
++import com.shilapi.xcertplay.transport.NcmUsbBridge
++import java.lang.reflect.InvocationTargetException
++import java.util.concurrent.atomic.AtomicBoolean
++import org.junit.Assert.*
++import org.junit.Test
++import org.junit.runner.RunWith
++import org.mockito.Mockito.*
++import org.robolectric.RobolectricTestRunner
++import org.robolectric.annotation.Config
++
++/** Reproduce USB teardown before either NCM/TUN worker acquires its descriptor. */
++@RunWith(RobolectricTestRunner::class)
++@Config(sdk = [28, 33], manifest = Config.NONE)
++class UsbNcmClosedTunTest {
++    @Test fun inboundClosedTunUsesExistingTransportErrorCallback() = closedTun("runNcmToTun", true)
++    @Test fun outboundClosedTunUsesExistingTransportErrorCallback() = closedTun("runTunToNcm", true)
++    @Test fun inboundClosedTunAfterStopDoesNotReportAnotherFailure() = closedTun("runNcmToTun", false)
++    @Test fun outboundClosedTunAfterStopDoesNotReportAnotherFailure() = closedTun("runTunToNcm", false)
++
++    private fun closedTun(worker: String, running: Boolean) {
++        val pipe = ParcelFileDescriptor.createPipe()
++        val tun = pipe[0]
++        try {
++            tun.close()
++            // This is a real closed Android descriptor, not a mocked constructor failure.
++            assertTrue(runCatching { tun.fileDescriptor }.exceptionOrNull() is IllegalStateException)
++            val ncm = mock(NcmUsbBridge::class.java)
++            val errors = mutableListOf<Throwable>()
++            val bridge = Ipv6NcmBridge(ncm, tun, ByteArray(6)) { errors += it }
++            (Ipv6NcmBridge::class.java.getDeclaredField("running")
++                .apply { isAccessible = true }.get(bridge) as AtomicBoolean).set(running)
++            val escaped = try {
++                Ipv6NcmBridge::class.java.getDeclaredMethod(worker)
++                    .apply { isAccessible = true }.invoke(bridge)
++                null
++            } catch (error: InvocationTargetException) {
++                error.cause
++            }
++            if (System.getenv("USB_EXPECT_BASELINE_CRASH") == "1") {
++                // Executed against the untouched pinned baseline by Actions.
++                assertTrue("Baseline exception must escape $worker", escaped is IllegalStateException)
++                assertTrue(errors.isEmpty())
++            } else {
++                assertNull("USB worker must not leak a closed-TUN exception", escaped)
++                assertEquals(if (running) 1 else 0, errors.size)
++                if (running) assertTrue(errors.single() is IllegalStateException)
++            }
++            verifyNoInteractions(ncm)
++        } finally {
++            pipe[1].close()
++        }
++    }
++}
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/network/Ipv6NcmBridge.kt b/shared/src/main/java/com/shilapi/xcertplay/network/Ipv6NcmBridge.kt
+index 05e1833..f4d20e1 100644
+--- a/shared/src/main/java/com/shilapi/xcertplay/network/Ipv6NcmBridge.kt
++++ b/shared/src/main/java/com/shilapi/xcertplay/network/Ipv6NcmBridge.kt
+@@ -61,8 +61,9 @@ class Ipv6NcmBridge(
+     }
+ 
+     private fun runNcmToTun() {
+-        val output = FileOutputStream(tun.fileDescriptor)
+         try {
++            // USB teardown may close the TUN before this worker begins.
++            val output = FileOutputStream(tun.fileDescriptor)
+             while (running.get()) {
+                 val frame = ncm.recv(READ_TIMEOUT_MILLIS) ?: continue
+                 val ipv6 = EthernetIpv6Codec.parseIpv6View(frame) ?: continue
+@@ -89,9 +90,10 @@ class Ipv6NcmBridge(
+     }
+ 
+     private fun runTunToNcm() {
+-        val input = FileInputStream(tun.fileDescriptor)
+-        val buffer = ByteArray(TUN_READ_BYTES)
+         try {
++            // Keep descriptor acquisition inside the existing transport error boundary.
++            val input = FileInputStream(tun.fileDescriptor)
++            val buffer = ByteArray(TUN_READ_BYTES)
+             while (running.get()) {
+                 val length = input.read(buffer)
+                 if (length == -1) {
