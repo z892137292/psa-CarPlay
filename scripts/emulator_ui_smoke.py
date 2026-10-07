@@ -56,7 +56,8 @@ apk=next(Path('out').glob('*.apk'));adb('install','-r',str(apk))
 for perm in ['RECORD_AUDIO','ACCESS_FINE_LOCATION','ACCESS_COARSE_LOCATION','WRITE_EXTERNAL_STORAGE']:
  subprocess.run(['adb','shell','pm','grant',PKG,'android.permission.'+perm],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
 adb('shell','wm','size','1920x720');adb('shell','wm','density','160')
-assert 'Override size: 1920x720' in adb('shell','wm','size'),'Emulator clamped requested head-unit dimensions'
+effective_sizes=re.findall(r'(?:Physical|Override) size: ([0-9]+x[0-9]+)',adb('shell','wm','size'))
+assert effective_sizes and effective_sizes[-1]=='1920x720',('Unexpected effective head-unit dimensions',effective_sizes)
 # Android's first-use immersive tutorial obscures the app hierarchy; configure the test device.
 adb('shell','settings','put','secure','immersive_mode_confirmations','confirmed')
 adb('shell','am','force-stop',PKG);launch(None,cold=True)
