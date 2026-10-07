@@ -1,4 +1,4 @@
-PASS: 97 protocol/media/USB/MFi files byte-identical; complete wired controller block byte-identical
+PASS: 96 protocol/media/USB/MFi files byte-identical; complete wired controller block byte-identical
 PASS: MFi -> PHONE_BOUND -> network ordering, ownership and handoff guards, controller exit gate
 Actual source changes:
 common/src/main/java/com/shilapi/xcertplay/AirPlayPersistence.kt
@@ -13,9 +13,12 @@ experimental/wifi-direct/WifiP2pGroupManager.kt
 experimental/wifi-direct/WirelessHotspotManager.kt
 mobile/build.gradle.kts
 shared/src/main/java/com/shilapi/xcertplay/airplay/AirPlaySession.kt
+shared/src/main/java/com/shilapi/xcertplay/media/AndroidMediaSink.kt
 shared/src/main/java/com/shilapi/xcertplay/network/AndroidApiSoftApBackend.kt
 shared/src/main/java/com/shilapi/xcertplay/network/CarPlayVpnService.kt
 shared/src/main/java/com/shilapi/xcertplay/network/LanNetworkManager.kt
+shared/src/main/java/com/shilapi/xcertplay/network/LegacyHotspotRadio.kt
+shared/src/main/java/com/shilapi/xcertplay/network/LocalOnlyHotspotRadioInfo.kt
 shared/src/main/java/com/shilapi/xcertplay/network/RootSoftApBackend.kt
 shared/src/main/java/com/shilapi/xcertplay/network/RootSoftApMain.kt
 shared/src/main/java/com/shilapi/xcertplay/network/SessionSoftApManager.kt

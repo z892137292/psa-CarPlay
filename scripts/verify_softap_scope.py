@@ -7,6 +7,7 @@ baseline, candidate = map(Path, sys.argv[1:3])
 allowed = {
     "shared/src/main/java/com/shilapi/xcertplay/transport/Iap2WirelessControlClient.kt",
     "shared/src/main/java/com/shilapi/xcertplay/airplay/AirPlaySession.kt",
+    "shared/src/main/java/com/shilapi/xcertplay/media/AndroidMediaSink.kt",
 }
 protected = []
 for directory in ("transport", "airplay", "mfi", "media", "iap2"):
@@ -17,6 +18,8 @@ for directory in ("transport", "airplay", "mfi", "media", "iap2"):
             assert other.is_file() and file.read_bytes() == other.read_bytes(), str(file.relative_to(baseline))
             protected.append(str(file.relative_to(baseline)))
 
+sink=Path("shared/src/main/java/com/shilapi/xcertplay/media/AndroidMediaSink.kt")
+assert (candidate/sink).read_text().replace('            report("Audio: first PCM received")\n','') == (baseline/sink).read_text(), "Audio changed beyond first-PCM diagnostics"
 controller = Path("shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt")
 old, new = (root / controller for root in (baseline,candidate))
 before, after = old.read_text(), new.read_text()

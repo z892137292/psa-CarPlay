@@ -53,7 +53,7 @@ The added bounded su executor verifies uid 0, quotes arguments, invokes the
 APK's RootSoftApMain through app_process and never logs credentials.
 RootSoftApMain calls platform methods by name rather than hardcoded Binder
 transaction numbers: 5 GHz WPA2 configuration, platform tethering startup,
-live tethered interfaces, SoftApCallback/iw radio information, and IP neighbors.
+live tethered interfaces, SoftApCallback/iw and the existing read-only WEXT radio reader, and IP neighbors.
 ACS chooses a regulatory-supported channel rather than imposing an unsupported
 36/40/44/48 channel. Root startup waits for actual interface and IPv4; the
 live SSID/password must match the current request. DHCP is reported as system
@@ -66,7 +66,7 @@ The Android backend owns a LocalOnlyHotspot reservation, attempts configurable
 A 2.4 GHz or unknown channel fails explicitly; no fake channel/address and no
 Wi-Fi Direct fallback. Android 9 public LOHS cannot reliably select 5 GHz;
 root/privileged OEM APIs and live radio availability must be checked on-device.
-Some ROMs lack iw or hide modern tethering methods. These report capability
+The existing JNI WEXT reader supplements iw. Some ROMs hide tethering methods or lack live radio readings. These report capability
 failure rather than pretending automatic CarPlay is working.
 
 AP credentials are created per generation. AirPlay and interface mDNS use
@@ -97,14 +97,14 @@ WIRELESS_AP_DIAG ... failureStage=SOFTAP_START_FAILED state=SOFTAP_STARTING deta
 Timeline also emits BT_FOUND, IAP2_READY, MFI_READY, SOFTAP_START, SOFTAP_READY,
 WIFI_CONFIG_SENT, PHONE_JOINED (neighbor evidence), START_SESSION, FIRST_TCP,
 AIRPLAY_SETUP, TYPE130_CREATED, TUNNEL_READY, FIRST_FRAME, FIRST_AUDIO and
-WIRELESS_ACTIVE. FIRST_AUDIO uses the existing first PCM diagnostic. The
-type-130 port remains in the existing AirPlay data-stream log.
+WIRELESS_ACTIVE. FIRST_AUDIO uses the existing first PCM diagnostic. The type-130 response port is also recorded in WIRELESS_AP_DIAG.
 
 ## Validation boundary
 
-verify_softap_scope.py checks 97 protected protocol/media/USB/MFi files and the
+verify_softap_scope.py checks 96 protected protocol/media/USB/MFi files and the
 entire wired controller bring-up block against the reconstructed working
-baseline byte-for-byte. Added tests cover session ownership, transport identity,
+baseline byte-for-byte. AndroidMediaSink adds only one first-PCM diagnostic notification;
+the scope check removes that exact line before byte comparison. Added tests cover session ownership, transport identity,
 generation replacement, AUTO/USB teardown gates, timeline and real AP policy.
 Existing wired encoding, USBMUX, AirPlay/type-130/media, terminal health, LAN,
 Bonjour, preparation visibility and controller close tests run in Actions.
