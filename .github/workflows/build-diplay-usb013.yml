@@ -1,0 +1,80 @@
+name: DiPlay 0.2.13 USB investigation baseline
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'scripts/verify_diplay_usb013_scope.py'
+      - '.github/workflows/build-diplay-usb013.yml'
+      - 'USB-0.2.13-INVESTIGATION.md'
+permissions:
+  contents: read
+jobs:
+  usb:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;28.2.13676358
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Reconstruct exact baseline and verify no runtime changes
+        run: |
+          git clone https://github.com/shihabal3amri/DiPlay.git upstream
+          git -C upstream checkout --detach 6fb0fa4a09e77a84a437da5159147a6f6141ed61
+          mkdir -p out
+          python3 scripts/verify_diplay_usb013_scope.py upstream | tee out/USB-SCOPE.txt
+          git -C upstream diff --exit-code
+          git -C upstream diff > out/USB-SOURCE-DIFF.patch
+          cp USB-0.2.13-INVESTIGATION.md out/
+      - name: Provision unchanged runtime assets from matching upstream release
+        run: |
+          curl --fail --location --retry 3 https://github.com/shihabal3amri/DiPlay/releases/download/v0.2.13/DiPlay-0.2.13.apk --output "$RUNNER_TEMP/original-0.2.13.apk"
+          mkdir -p "$RUNNER_TEMP/usb-auth/offline-mfi"
+          unzip -p "$RUNNER_TEMP/original-0.2.13.apk" assets/offline-mfi/identity.pk8 > "$RUNNER_TEMP/usb-auth/offline-mfi/identity.pk8"
+          unzip -p "$RUNNER_TEMP/original-0.2.13.apk" assets/offline-mfi/certificate.p7b > "$RUNNER_TEMP/usb-auth/offline-mfi/certificate.p7b"
+          test -s "$RUNNER_TEMP/usb-auth/offline-mfi/identity.pk8"
+          test -s "$RUNNER_TEMP/usb-auth/offline-mfi/certificate.p7b"
+      - name: Existing USB tests and unchanged debug APK
+        env:
+          DIPLAY_AUTH_ASSETS_DIR: ${{ runner.temp }}/usb-auth
+        run: |
+          cd upstream
+          chmod +x gradlew
+          ./gradlew :shared:testDebugUnitTest --tests 'com.shilapi.xcertplay.transport.Usb*' --tests com.shilapi.xcertplay.transport.Iap2WiredControlClientTest --tests com.shilapi.xcertplay.network.CarPlayVpnScopeTest :common:testDebugUnitTest --tests com.shilapi.xcertplay.CarPlayControllerUsbServiceTest --tests 'com.shilapi.xcertplay.Usb*' :mobile:assembleDebug --stacktrace
+      - name: Stage APK and test evidence
+        run: |
+          APK="$(find upstream/mobile/build/outputs/apk/debug -maxdepth 1 -name '*.apk' -type f | head -n 1)"
+          test -n "$APK"
+          cp "$APK" out/DiPlay-0.2.13-usb-investigation-debug.apk
+          cp -r upstream/common/build/test-results/testDebugUnitTest out/common-test-results
+          cp -r upstream/shared/build/test-results/testDebugUnitTest out/shared-test-results
+          AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -n 1)"
+          "$AAPT" dump badging "$APK" > out/APK-INFO.txt
+          grep -q "sdkVersion:'28'" out/APK-INFO.txt
+          grep -q "name='com.shihab.diplay.hudtest'" out/APK-INFO.txt
+          SIGN_TOOL="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
+          "$SIGN_TOOL" verify --verbose --print-certs "$APK" > out/APK-SIGNATURE.txt
+          "$SIGN_TOOL" verify --verbose --print-certs "$RUNNER_TEMP/original-0.2.13.apk" > out/ORIGINAL-SIGNATURE.txt
+          cd out
+          sha256sum *.apk > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DiPlay-0.2.13-USB-investigation-baseline
+          path: out/*
+          if-no-files-found: error
+      - name: Failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DiPlay-0.2.13-USB-failure-evidence
+          path: |
+            upstream/common/build/test-results/
+            upstream/shared/build/test-results/
+      - name: Remove temporary runtime assets
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/usb-auth" "$RUNNER_TEMP/original-0.2.13.apk"
