@@ -1,6 +1,7 @@
 PASS: 96 protocol/media/USB/MFi files byte-identical; complete wired controller block byte-identical
 PASS: MFi -> PHONE_BOUND -> network ordering, ownership and handoff guards, controller exit gate
 Actual source changes:
+common/src/main/AndroidManifest.xml
 common/src/main/java/com/shilapi/xcertplay/AirPlayPersistence.kt
 common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
 common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt

@@ -30,7 +30,7 @@ a previously unknown phone serial number. This distinction is explicit rather
 than inventing an iPhone identification payload. TCP is provisional. Known AP
 neighbor addresses constrain peers when available. SETUP assigns one session
 owner; changed peer/device/session and conflicting tunnel transport identities
-are rejected. A Wi-Fi MAC is not assumed to equal a Bluetooth MAC. Rejected or
+are rejected. A deviceID matching another paired Bluetooth device is also rejected. A Wi-Fi MAC is not assumed to equal a Bluetooth MAC. Rejected or
 stale sessions cannot replace the owner or trigger its UI disconnect.
 
 ## State machine
@@ -52,7 +52,7 @@ The working PSA baseline has local ADB support but no general su executor.
 The added bounded su executor verifies uid 0, quotes arguments, invokes the
 APK's RootSoftApMain through app_process and never logs credentials.
 RootSoftApMain calls platform methods by name rather than hardcoded Binder
-transaction numbers: 5 GHz WPA2 configuration, platform tethering startup,
+transaction numbers: 5 GHz WPA2 configuration, platform tethering startup (legacy Connectivity service on Android 9, TetheringManager on modern releases),
 live tethered interfaces, SoftApCallback/iw and the existing read-only WEXT radio reader, and IP neighbors.
 ACS chooses a regulatory-supported channel rather than imposing an unsupported
 36/40/44/48 channel. Root startup waits for actual interface and IPv4; the
@@ -95,7 +95,7 @@ WIRELESS_AP_DIAG ... failureStage=SOFTAP_START_FAILED state=SOFTAP_STARTING deta
 ```
 
 Timeline also emits BT_FOUND, IAP2_READY, MFI_READY, SOFTAP_START, SOFTAP_READY,
-WIFI_CONFIG_SENT, PHONE_JOINED (neighbor evidence), START_SESSION, FIRST_TCP,
+WIFI_CONFIG_SENT, PHONE_JOINED (accepted session ownership); AP_CLIENT_SEEN separately records neighbor evidence, START_SESSION, FIRST_TCP,
 AIRPLAY_SETUP, TYPE130_CREATED, TUNNEL_READY, FIRST_FRAME, FIRST_AUDIO and
 WIRELESS_ACTIVE. FIRST_AUDIO uses the existing first PCM diagnostic. The type-130 response port is also recorded in WIRELESS_AP_DIAG.
 
