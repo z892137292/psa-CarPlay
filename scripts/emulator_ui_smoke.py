@@ -74,6 +74,11 @@ xml='<map><boolean name="auto_connect" value="false" /></map>'
 subprocess.run(['adb','shell','run-as',PKG,'sh','-c',"'mkdir -p shared_prefs; cat > shared_prefs/diplay.xml'"],input=xml,text=True,check=True)
 adb('shell','am','force-stop',PKG);launch(cold=True);check('cold-home','PSA CarPlay','连接手机')
 check('network-failure','车机热点未开启')
+adb('shell','input','keyevent','4');time.sleep(.7)
+home_resumed=adb('shell','dumpsys','activity','activities')
+(OUT/'home-resolved-activity.txt').write_text(home_resumed)
+assert not re.search(r'mResumedActivity[^\n]*'+re.escape(PKG),home_resumed),'Root Back did not return to system HOME'
+launch(cold=True)
 tap('手机');check('phones','未发现已配对')
 tap('连接');check('connection','车机热点')
 tap('诊断');check('diagnostics','连接诊断')

@@ -6,6 +6,7 @@ common/src/main/java/com/shilapi/xcertplay/NetworkSettingsLauncher.kt
 common/src/test/java/com/shilapi/xcertplay/DiagnosticRedactorTest.kt
 common/src/test/java/com/shilapi/xcertplay/LanNetworkManagerTest.kt
 common/src/test/java/com/shilapi/xcertplay/NetworkIdentityResolverTest.kt
+common/src/test/java/com/shilapi/xcertplay/NetworkSettingsLauncherTest.kt
 common/src/test/java/com/shilapi/xcertplay/SystemHotspotManagerTest.kt
 mobile/build.gradle.kts
 shared/src/main/java/com/shilapi/xcertplay/network/ExistingSystemAp.kt

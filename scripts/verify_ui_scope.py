@@ -5,6 +5,7 @@ import sys
 
 baseline,candidate=map(Path,sys.argv[1:3])
 allowed={
+ "common/src/test/java/com/shilapi/xcertplay/NetworkSettingsLauncherTest.kt",
  "common/src/test/java/com/shilapi/xcertplay/SystemHotspotManagerTest.kt",
  "shared/src/main/java/com/shilapi/xcertplay/network/SystemHotspotManager.kt",
  "common/src/main/java/com/shilapi/xcertplay/DiagnosticRedactor.kt",
