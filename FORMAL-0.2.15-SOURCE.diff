@@ -1,5 +1,5 @@
 diff --git a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt b/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
-index f91a557..dcbd332 100644
+index f91a557..76238d6 100644
 --- a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
 +++ b/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
 @@ -336,6 +336,7 @@ class CarPlayHostActivity : ComponentActivity() {
@@ -10,15 +10,34 @@ index f91a557..dcbd332 100644
      private var reconnectScheduled = false
      private var sessionLog: SessionLogFile? = null
      private var psaDiagnostics: PsaDisconnectDiagnostics? = null
-@@ -2863,6 +2864,7 @@ class CarPlayHostActivity : ComponentActivity() {
-             onScreenStreamActiveChanged = { type, active ->
-                 onScreenStreamStateChanged(controllerGeneration, type, active)
-             },
-+            onFirstFrameRendered = { type -> onFirstFrameRendered(controllerGeneration, type) },
-             mediaBufferMillis = AirPlayPersistence.loadMediaBufferMillis(this),
-             onAudioDiagnostic = { message ->
-                 if (message.startsWith("Microphone: ")) {
-@@ -2935,6 +2937,7 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -377,6 +378,8 @@ class CarPlayHostActivity : ComponentActivity() {
+                     existing?.release()
+                     currentSurface = it
+                     currentSurfaceTexture = texture
++                    mainFirstFrameReady = false
++                    updateDebugOverlays()
+                 }
+             }
+             appendLog(if (existing === surface) "Texture surface reused" else "Texture surface created")
+@@ -399,11 +402,16 @@ class CarPlayHostActivity : ComponentActivity() {
+             }
+             currentSurface = null
+             currentSurfaceTexture = null
++            mainFirstFrameReady = false
++            updateDebugOverlays()
+             appendLog("Texture surface destroyed")
+             return true
+         }
+ 
+-        override fun onSurfaceTextureUpdated(texture: SurfaceTexture) = Unit
++        override fun onSurfaceTextureUpdated(texture: SurfaceTexture) {
++            if (currentSurfaceTexture === texture && SCREEN_TYPE_MAIN in activeScreenStreamTypes)
++                onFirstFrameRendered(restartGeneration, SCREEN_TYPE_MAIN)
++        }
+     }
+ 
+     override fun onCreate(savedInstanceState: Bundle?) {
+@@ -2935,6 +2943,7 @@ class CarPlayHostActivity : ComponentActivity() {
                          return@runOnUiThread
                      }
                      activeScreenStreamTypes.clear()
@@ -26,7 +45,7 @@ index f91a557..dcbd332 100644
                      setConnectionStage(getString(R.string.carplay_session_ended_reconnecting))
                      appendLog("AirPlay session ended; reconnecting from scratch")
                      reconnectAfterLoss("AirPlay session ended")
-@@ -2952,6 +2955,7 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -2952,6 +2961,7 @@ class CarPlayHostActivity : ComponentActivity() {
                          return@runOnUiThread
                      }
                      activeScreenStreamTypes.clear()
@@ -34,15 +53,7 @@ index f91a557..dcbd332 100644
                      setConnectionStage(getString(R.string.transport_error_reconnecting))
                      appendLog("CarPlay transport error: $message; reconnecting from scratch")
                      reconnectAfterLoss("CarPlay transport error: $message")
-@@ -3032,6 +3036,7 @@ class CarPlayHostActivity : ComponentActivity() {
-         snapshot.sink.setScreenStreamActiveChangedListener { type, active ->
-             onScreenStreamStateChanged(restartGeneration, type, active)
-         }
-+        snapshot.sink.setFirstFrameRenderedListener { type -> onFirstFrameRendered(generation, type) }
-         currentSurface?.let(::attachSurface)
-         val serviceReused = snapshot.controller.hasActiveAirPlayAttachment()
-         appendLog(
-@@ -3292,6 +3297,7 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -3292,6 +3302,7 @@ class CarPlayHostActivity : ComponentActivity() {
      private fun returnHomeAfterConfirmedLoss(reason: String, eventNanos: Long) {
          activeAirPlaySession = null
          activeScreenStreamTypes.clear()
@@ -50,7 +61,7 @@ index f91a557..dcbd332 100644
          CarPlayBackgroundSession.active = false
          PsaConnectionState.set("连接", "等待重连")
          appendFileLog("CONNECTION_STATE state=DISCONNECTED reason=$reason eventNanos=$eventNanos")
-@@ -3356,6 +3362,7 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -3356,6 +3367,7 @@ class CarPlayHostActivity : ComponentActivity() {
          val size = activeDisplaySize ?: return
          appendLog(reason)
          activeScreenStreamTypes.clear()
@@ -58,13 +69,13 @@ index f91a557..dcbd332 100644
          setConnectionStage(reason)
          Log.i(TAG, "$reason; rebuilding stack at ${size.width}x${size.height}")
          val generation = ++restartGeneration
-@@ -3585,10 +3592,23 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -3585,10 +3597,23 @@ class CarPlayHostActivity : ComponentActivity() {
          return total / event.pointerCount
      }
  
 +    private fun onFirstFrameRendered(generation: Int, type: Int) {
 +        runOnUiThread {
-+            if (shuttingDown.get() || generation != restartGeneration || type != SCREEN_TYPE_MAIN) return@runOnUiThread
++            if (shuttingDown.get() || generation != restartGeneration || type != SCREEN_TYPE_MAIN || mainFirstFrameReady) return@runOnUiThread
 +            mainFirstFrameReady = true
 +            PsaConnectionState.set("视频", "FIRST_FRAME：已输出首帧")
 +            appendLog("FIRST_FRAME generation=$generation type=$type")
@@ -83,7 +94,7 @@ index f91a557..dcbd332 100644
              if (active) {
                  activeScreenStreamTypes.add(type)
              } else {
-@@ -3625,7 +3645,7 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -3625,7 +3650,7 @@ class CarPlayHostActivity : ComponentActivity() {
  
      private fun updateDebugOverlays() {
          statusScrollView?.visibility = View.GONE
@@ -383,10 +394,10 @@ index 667cd4d..af12f2a 100644
 +    <string name="settings_android9_compat">Android 9: HEVC software decoding is unavailable; hardware decoding is used.</string>
  </resources>
 diff --git a/common/src/test/java/com/shilapi/xcertplay/CarPlayHostPreparationTest.kt b/common/src/test/java/com/shilapi/xcertplay/CarPlayHostPreparationTest.kt
-index eb3a200..cbc8dc6 100644
+index eb3a200..e211715 100644
 --- a/common/src/test/java/com/shilapi/xcertplay/CarPlayHostPreparationTest.kt
 +++ b/common/src/test/java/com/shilapi/xcertplay/CarPlayHostPreparationTest.kt
-@@ -47,13 +47,27 @@ class CarPlayHostPreparationTest {
+@@ -47,13 +47,41 @@ class CarPlayHostPreparationTest {
          assertEquals(View.VISIBLE, (field("connectionPanel") as View).visibility)
      }
  
@@ -405,6 +416,20 @@ index eb3a200..cbc8dc6 100644
 +        frame(0, 111)
 +        frame(0, 130)
 +        frame(-1, 110)
++        assertEquals(View.VISIBLE, (field("connectionPanel") as View).visibility)
++    }
++
++    @Test fun onlyCurrentTextureUpdateCanRevealTheMainVideo() {
++        stream(0, true)
++        val current = org.mockito.Mockito.mock(android.graphics.SurfaceTexture::class.java)
++        val stale = org.mockito.Mockito.mock(android.graphics.SurfaceTexture::class.java)
++        CarPlayHostActivity::class.java.getDeclaredField("currentSurfaceTexture").apply { isAccessible = true }.set(activity, current)
++        val listener = field("textureListener") as android.view.TextureView.SurfaceTextureListener
++        listener.onSurfaceTextureUpdated(stale)
++        assertEquals(View.VISIBLE, (field("connectionPanel") as View).visibility)
++        listener.onSurfaceTextureUpdated(current)
++        assertEquals(View.GONE, (field("connectionPanel") as View).visibility)
++        listener.onSurfaceTextureDestroyed(current)
 +        assertEquals(View.VISIBLE, (field("connectionPanel") as View).visibility)
 +    }
 +
@@ -701,73 +726,6 @@ index f5a1878..15c2051 100644
  
      <queries>
          <intent>
-diff --git a/shared/src/main/java/com/shilapi/xcertplay/media/AndroidMediaSink.kt b/shared/src/main/java/com/shilapi/xcertplay/media/AndroidMediaSink.kt
-index 85ca71d..16fbfa2 100644
---- a/shared/src/main/java/com/shilapi/xcertplay/media/AndroidMediaSink.kt
-+++ b/shared/src/main/java/com/shilapi/xcertplay/media/AndroidMediaSink.kt
-@@ -136,6 +136,7 @@ class AndroidMediaSink(
-     private val onAudioDiagnostic: (String) -> Unit = {},
-     /** True while any music ("media") audio stream is running; called from media threads. */
-     private val onMediaAudioChanged: (Boolean) -> Unit = {},
-+    onFirstFrameRendered: ((Int) -> Unit)? = null,
- ) : MediaSink {
-     private val appContext = context?.applicationContext
-     private val audioManager = appContext?.getSystemService(AudioManager::class.java)
-@@ -146,6 +147,8 @@ class AndroidMediaSink(
-     )
-     private val screenStateLock = Any()
-     private val activeScreenTypes = mutableSetOf<Int>()
-+    private val renderedScreenTypes = mutableSetOf<Int>()
-+    @Volatile private var firstFrameRendered = onFirstFrameRendered
-     private val defaultSurface = surface
-     @Volatile private var screenStreamActiveChanged = onScreenStreamActiveChanged
-     private val surfaces = ConcurrentHashMap<Int, Surface>()
-@@ -228,6 +231,13 @@ class AndroidMediaSink(
-         }
-     }
- 
-+    fun setFirstFrameRenderedListener(listener: ((Int) -> Unit)?) {
-+        synchronized(screenStateLock) {
-+            firstFrameRendered = listener
-+            renderedScreenTypes.forEach { listener?.invoke(it) }
-+        }
-+    }
-+
-     override fun onVideoCodec(type: Int, codec: VideoCodec) {
-         pendingVideoCodec[type] = codec
-     }
-@@ -245,6 +255,7 @@ class AndroidMediaSink(
-     }
- 
-     override fun onScreenStreamActive(type: Int, active: Boolean) {
-+        if (!active) synchronized(screenStateLock) { renderedScreenTypes.remove(type) }
-         if (!active) {
-             videoRecoveryHandlers.remove(type)
-             videoDiagnosticHandlers.remove(type)
-@@ -340,6 +351,8 @@ class AndroidMediaSink(
-             activeScreenTypes.forEach { screenStreamActiveChanged?.invoke(it, false) }
-             activeScreenTypes.clear()
-             screenStreamActiveChanged = null
-+            firstFrameRendered = null
-+            renderedScreenTypes.clear()
-         }
-         videoDecoders.values.forEach(VideoDecoder::close)
-         videoDecoders.clear()
-@@ -373,7 +386,13 @@ class AndroidMediaSink(
-         videoHeight,
-         preferSoftwareHevcDecoder,
-         requestKeyFrame = { requestVideoRecovery(type) },
--        report = { videoDiagnosticHandlers[type]?.invoke(it) },
-+        report = { message ->
-+            if (message == "first frame rendered" && statsLabel == null) synchronized(screenStateLock) {
-+                renderedScreenTypes.add(type)
-+                firstFrameRendered?.invoke(type)
-+            }
-+            videoDiagnosticHandlers[type]?.invoke(message)
-+        },
-         statsLabel = statsLabel,
-     )
- 
 diff --git a/shared/src/main/java/com/shilapi/xcertplay/network/ExistingWifiManager.kt b/shared/src/main/java/com/shilapi/xcertplay/network/ExistingWifiManager.kt
 index dae3c2e..f2481ec 100644
 --- a/shared/src/main/java/com/shilapi/xcertplay/network/ExistingWifiManager.kt

@@ -46,7 +46,7 @@
 | 车机热点 | Bluetooth bootstrap / MFi / 已选配对手机绑定（基线未使用 PHONE_BOUND 字面状态名，绑定和认证行为保留） → ManualHotspotManager 只读系统现有 AP → Bonjour / AirPlay |
 | Existing LAN | 同一蓝牙鉴权 → ExistingWifiManager → 实际 station 接口及 SSID/BSSID 校验 → Bonjour / AirPlay |
 | 画面与声音 | type-130、H.264、AAC、触摸及既有编码参数；不修改旋转策略 |
-| 生命周期 | 旧 Controller 清理 gate；断线回首页；主视频 FIRST_FRAME 才隐藏准备面板 |
+| 生命周期 | 旧 Controller 清理 gate；断线回首页；当前主 TextureView 实际更新 FIRST_FRAME 才隐藏准备面板，Surface 销毁恢复等待 |
 | UI | 1920×720 比例三列首页；真实已配对蓝牙列表；Wi-Fi/热点设置及连接诊断 |
 
 本地 MFi 含 experimental 字样但仍有效，保留全部实现；Android 旧 WifiInfo / WifiConfiguration 兼容读取、type-130 仪表和现有设置同样保留。未依据名称批量删除。
