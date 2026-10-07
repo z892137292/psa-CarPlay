@@ -1,0 +1,17 @@
+UI baseline: 265775013acbb20c720d280600b466261c81624f, versionCode 215
+PASS: no existing source files deleted; unchanged AirPlay/USBMUX/NCM/iAP2/MFi/video/audio/touch protocol implementations
+PASS: complete USB controller bring-up unchanged; Existing LAN and original SystemHotspotManager unchanged
+UI source files changed:
+common/src/main/java/com/shilapi/xcertplay/AirPlayPersistence.kt
+common/src/main/java/com/shilapi/xcertplay/BluetoothPhoneRepository.kt
+common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
+common/src/main/java/com/shilapi/xcertplay/CarPlayShell.kt
+common/src/main/java/com/shilapi/xcertplay/CarPlayUiState.kt
+common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
+common/src/test/java/com/shilapi/xcertplay/CarPlayHostPreparationTest.kt
+common/src/test/java/com/shilapi/xcertplay/CarPlayShellStartupTest.kt
+common/src/test/java/com/shilapi/xcertplay/CarPlayUiStateTest.kt
+common/src/test/java/com/shilapi/xcertplay/HotspotModeMigrationTest.kt
+mobile/build.gradle.kts
+shared/src/main/java/com/shilapi/xcertplay/network/ManualHotspotManager.kt
+shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt

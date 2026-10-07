@@ -1,0 +1,9 @@
+// Collect complete reports for both reconstructed revisions. The comparison
+// script, not blanket disabling lint issues, gates newly introduced errors.
+allprojects { p ->
+    ['com.android.library', 'com.android.application'].each { pluginId ->
+        p.plugins.withId(pluginId) {
+            p.extensions.getByName('android').lint.abortOnError = false
+        }
+    }
+}
