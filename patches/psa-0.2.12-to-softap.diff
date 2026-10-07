@@ -66,7 +66,7 @@ index 7e3d4a2..4755615 100644
  
      fun loadDebugLogsEnabled(context: Context): Boolean =
 diff --git a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt b/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
-index f91a557..d7df140 100644
+index f91a557..2d12e9b 100644
 --- a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
 +++ b/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
 @@ -321,7 +321,8 @@ class CarPlayHostActivity : ComponentActivity() {
@@ -79,65 +79,17 @@ index f91a557..d7df140 100644
      private var awaitingVpnConsent = false
      private var awaitingWirelessPermissions = false
      private var awaitingLocationPermission = false
-@@ -413,52 +414,11 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -413,9 +414,6 @@ class CarPlayHostActivity : ComponentActivity() {
          MapMirrors.sink = mirrorSink
          MapMirrors.onChanged = mirrorsChanged
          languagePreferenceAtCreate = AppLocale.preference(this)
 -        if (intent.action == "android.hardware.usb.action.USB_DEVICE_ATTACHED") {
 -            AirPlayPersistence.saveWirelessEnabled(this, false)
 -        }
--        if (runCatching { DiPlayBootstrap.ensure(this) }.isFailure) {
--            startActivity(Intent(this, DiPlayActivity::class.java))
--            finish(); return
--        }
--        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
--        initializeSessionLog()
--        psaDiagnostics = PsaDisconnectDiagnostics(this, ::appendLog).also { it.start() }
--        lastConfiguration = Configuration(resources.configuration)
--        darkMode = nightModeOrNull(resources.configuration.uiMode) ?: false
--        advancedAudioChannelMappingSupported =
--            resources.getBoolean(R.bool.config_advanced_audio_channel_mapping)
--        airPlayIdentity = AirPlayPersistence.loadIdentity(this)
--        loadPersistedSettings()
--        locationPermissionAvailable = hasFineLocationPermission()
--        setContentView(buildContentView())
--        applyFullscreenMode()
--        onBackPressedDispatcher.addCallback(
--            this,
--            object : OnBackPressedCallback(true) {
--                override fun handleOnBackPressed() {
--                    if (menuOpen) {
--                        if (safeAreaEditorActive) closeSafeAreaEditor() else cancelSettingsEdits()
--                    } else {
--                        showDiPlayHome()
--                    }
--                }
--            },
--        )
--
--        appendLog(
--            "Host started; MFI target=${mfiTargetLabel(mfiTarget)}; " +
--                "transport=${if (wirelessEnabled) "wireless" else "wired"}",
--        )
--        val reusedBackgroundSession = adoptBackgroundSession()
--        microphoneAvailable =
--            checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
--        microphonePermissionResolved = microphoneAvailable
--        if (reusedBackgroundSession) {
--            updateDebugOverlays()
--        } else if (microphonePermissionResolved) {
--            requestStartupPrerequisites()
--        } else {
--            microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
-+        if (intent.action == "android.hardware.usb.action.USB_DEVICE_ATTACHED" && wirelessEnabled &&
-+            transportManager.mode==com.shilapi.xcertplay.orchestration.ConnectionMode.AUTO && activeAirPlaySession==null) {
-+            // ATTACHED requests an attempt; it never declares USB_ACTIVE or preempts live Wi-Fi.
-+            shutdown(false,"AUTO USB attempt") { startActivity(Intent(this,CarPlayHostActivity::class.java)) }
-+            finish()
-         }
-     }
- 
-@@ -492,7 +452,9 @@ class CarPlayHostActivity : ComponentActivity() {
+         if (runCatching { DiPlayBootstrap.ensure(this) }.isFailure) {
+             startActivity(Intent(this, DiPlayActivity::class.java))
+             finish(); return
+@@ -492,7 +490,9 @@ class CarPlayHostActivity : ComponentActivity() {
          safeAreaDrawOutside = AirPlayPersistence.loadSafeAreaDrawOutside(this)
          locationReportingEnabled = AirPlayPersistence.loadLocationReportingEnabled(this)
          locationPermissionAvailable = hasFineLocationPermission()
@@ -148,7 +100,7 @@ index f91a557..d7df140 100644
          mfiTarget = AirPlayPersistence.loadMfiTarget(this)
          mfiI2cPath = AirPlayPersistence.loadMfiI2cPath(this)
          remoteMfiServer = AirPlayPersistence.loadRemoteMfiServer(this)
-@@ -573,7 +535,7 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -573,7 +573,7 @@ class CarPlayHostActivity : ComponentActivity() {
          }
  
      private fun requiredWirelessPermissions(): List<String> = when {
@@ -157,7 +109,7 @@ index f91a557..d7df140 100644
              Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> listOf(
                  Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.NEARBY_WIFI_DEVICES,
                  Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION)
-@@ -2379,7 +2341,7 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -2379,7 +2379,7 @@ class CarPlayHostActivity : ComponentActivity() {
              }
          }
  
@@ -166,7 +118,7 @@ index f91a557..d7df140 100644
  
  
      private fun validateMfiSettings(): Boolean {
-@@ -2403,7 +2365,7 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -2403,7 +2403,7 @@ class CarPlayHostActivity : ComponentActivity() {
      }
  
  
@@ -175,7 +127,7 @@ index f91a557..d7df140 100644
  
      private fun menuText(
          text: String,
-@@ -2865,6 +2827,7 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -2865,6 +2865,7 @@ class CarPlayHostActivity : ComponentActivity() {
              },
              mediaBufferMillis = AirPlayPersistence.loadMediaBufferMillis(this),
              onAudioDiagnostic = { message ->
@@ -183,7 +135,7 @@ index f91a557..d7df140 100644
                  if (message.startsWith("Microphone: ")) {
                      AsyncDiagnosticLog.append(diagnosticLog, message)
                  } else {
-@@ -2911,6 +2874,8 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -2911,6 +2912,8 @@ class CarPlayHostActivity : ComponentActivity() {
                          return@runOnUiThread
                      }
                      activeAirPlaySession = session
@@ -192,7 +144,7 @@ index f91a557..d7df140 100644
                      PsaConnectionState.set("连接", "连接正常")
                      CarPlayBackgroundSession.active = true
                      reconnectAttempts = 0
-@@ -2990,6 +2955,9 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -2990,6 +2993,9 @@ class CarPlayHostActivity : ComponentActivity() {
              when (status) {
                  is CarPlayStatus.Failed -> if (activeAirPlaySession != null && !shuttingDown.get()) {
                      runOnUiThread { returnHomeAfterConfirmedLoss("TRANSPORT_FAILURE", System.nanoTime()) }
@@ -202,7 +154,7 @@ index f91a557..d7df140 100644
                  } else if (status.manualRecoveryRequired) {
                      wifiRecoveryButton?.visibility = View.VISIBLE
                  } else {
-@@ -3009,6 +2977,8 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -3009,6 +3015,8 @@ class CarPlayHostActivity : ComponentActivity() {
              return false
          }
          displayDiagnosticAttempt = DisplayDiagnosticSnapshot.currentAttempt(this)
@@ -211,7 +163,7 @@ index f91a557..d7df140 100644
          controller = snapshot.controller
          sink = snapshot.sink
          sessionDisplay = snapshot.display
-@@ -3127,6 +3097,12 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -3127,6 +3135,12 @@ class CarPlayHostActivity : ComponentActivity() {
              },
          )
          controller = next
@@ -224,7 +176,7 @@ index f91a557..d7df140 100644
          CarPlayMediaKeys.attach(this, next)
          if (airPlayConfig.videoInCar) CarPlayVideo.attach(this, next)
          val display = CarPlaySessionDisplay(airPlayConfig.main.widthPixels, airPlayConfig.main.heightPixels,
-@@ -3308,7 +3284,7 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -3308,7 +3322,7 @@ class CarPlayHostActivity : ComponentActivity() {
      }
  
      private fun reconnectAfterLoss(reason: String) {
@@ -233,7 +185,7 @@ index f91a557..d7df140 100644
              (reason.contains("NETWORK_IDENTITY_UNVERIFIED") || reason.contains("NETWORK_AMBIGUOUS") || reason.contains("IPV4_UNAVAILABLE"))) {
              setConnectionStage("LAN 网络身份未验证，请检查精确位置权限和 LAN 设置后人工连接")
              return
-@@ -3399,7 +3375,13 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -3399,7 +3413,13 @@ class CarPlayHostActivity : ComponentActivity() {
                      }
                      CarPlayBackgroundSession.closed(oldController)
                      handshakeResetInProgress = false
@@ -248,7 +200,7 @@ index f91a557..d7df140 100644
                  }
              }
          }
-@@ -3713,17 +3695,26 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -3713,17 +3733,26 @@ class CarPlayHostActivity : ComponentActivity() {
      private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
  
      private fun CarPlayStatus.describe(): String = when (this) {
@@ -391,6 +343,68 @@ index 003b254..e7b749e 100644
      fun saveAutoConnect(context: Context, value: Boolean) {
          prefs(context).edit().putBoolean("auto_connect", value).apply()
      }
+diff --git a/common/src/test/java/com/shilapi/xcertplay/CarPlayHostStartupTest.kt b/common/src/test/java/com/shilapi/xcertplay/CarPlayHostStartupTest.kt
+new file mode 100644
+index 0000000..e1cff48
+--- /dev/null
++++ b/common/src/test/java/com/shilapi/xcertplay/CarPlayHostStartupTest.kt
+@@ -0,0 +1,56 @@
++package com.shilapi.xcertplay
++
++import android.view.View
++import android.widget.TextView
++import com.shilapi.xcertplay.orchestration.ConnectionMode
++import java.util.concurrent.ExecutorService
++import java.util.concurrent.atomic.AtomicBoolean
++import org.junit.Assert.*
++import org.junit.Test
++import org.junit.runner.RunWith
++import org.robolectric.Robolectric
++import org.robolectric.RuntimeEnvironment
++import org.robolectric.annotation.Config
++import org.robolectric.annotation.LooperMode
++
++@RunWith(org.robolectric.RobolectricTestRunner::class)
++@Config(sdk = [28])
++@LooperMode(LooperMode.Mode.PAUSED)
++class CarPlayHostStartupTest {
++    @Test fun usbLaunchCreatesOriginalPreparationThroughRealLifecycle() = launch(ConnectionMode.USB)
++    @Test fun wirelessLaunchCreatesOriginalPreparationThroughRealLifecycle() = launch(ConnectionMode.WIRELESS_AP)
++
++    private fun launch(mode: ConnectionMode) {
++        val app=RuntimeEnvironment.getApplication()
++        AirPlayPersistence.saveConnectionMode(app,mode)
++        // Authentication material and physical transports are outside this UI test.
++        // Only bootstrap provisioning is bypassed; onCreate and the view are not.
++        val ready=DiPlayBootstrap::class.java.getDeclaredField("ready").apply { isAccessible=true }
++        val oldReady=ready.getBoolean(null)
++        ready.setBoolean(null,true)
++        val lifecycle=Robolectric.buildActivity(CarPlayHostActivity::class.java)
++        val activity=lifecycle.get()
++        fun field(name: String)=CarPlayHostActivity::class.java.getDeclaredField(name).apply { isAccessible=true }
++        field("awaitingVpnConsent").setBoolean(activity,true)
++        try {
++            lifecycle.create().start().resume().visible()
++            assertFalse("Startup must not immediately finish",activity.isFinishing)
++            val panel=field("connectionPanel").get(activity) as? View
++            assertNotNull("onCreate must install the original preparation panel",panel)
++            assertTrue("Preparation must be visible in the actual window",panel!!.isShown)
++            assertEquals(View.VISIBLE,panel.visibility)
++            assertNotNull(field("videoView").get(activity))
++            assertNotNull(field("airPlayIdentity").get(activity))
++            assertNotNull(field("sessionLog").get(activity))
++            assertTrue((field("stageStatusView").get(activity) as TextView).text.isNotBlank())
++            assertEquals(mode==ConnectionMode.WIRELESS_AP,field("wirelessEnabled").getBoolean(activity))
++        } finally {
++            (field("shuttingDown").get(activity) as AtomicBoolean).set(true)
++            (field("teardownExecutor").get(activity) as ExecutorService).shutdownNow()
++            (field("airPlayCommandExecutor").get(activity) as ExecutorService).shutdownNow()
++            lifecycle.pause().stop().destroy()
++            ready.setBoolean(null,oldReady)
++            CarPlayBackgroundSession.clear()
++        }
++    }
++}
 diff --git a/common/src/test/java/com/shilapi/xcertplay/HotspotModeMigrationTest.kt b/common/src/test/java/com/shilapi/xcertplay/HotspotModeMigrationTest.kt
 index 0a06313..75a0297 100644
 --- a/common/src/test/java/com/shilapi/xcertplay/HotspotModeMigrationTest.kt
@@ -1572,7 +1586,7 @@ index 0000000..c29d3fc
 +    return 0
 +}
 diff --git a/mobile/build.gradle.kts b/mobile/build.gradle.kts
-index 3a85aad..24e1b4d 100644
+index 3a85aad..e8f4126 100644
 --- a/mobile/build.gradle.kts
 +++ b/mobile/build.gradle.kts
 @@ -17,8 +17,8 @@ android {
@@ -1581,8 +1595,8 @@ index 3a85aad..24e1b4d 100644
          targetSdk = 37
 -        versionCode = 212
 -        versionName = "0.2.12"
-+        versionCode = 214
-+        versionName = "0.2.14-softap"
++        versionCode = 215
++        versionName = "0.2.14-softap-ui-fix"
  
      }
  

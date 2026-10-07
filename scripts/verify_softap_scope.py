@@ -34,6 +34,12 @@ assert "WifiP2pGroupManager(" not in after
 assert "boundPhone?.airPlayPeerAddress == null" in after
 assert "!wirelessTunnelReady.get() || activeSession == null" in after
 assert "oldController?.awaitClosed" in (candidate/"common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt").read_text()
+host=(candidate/"common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt").read_text()
+startup=host[host.index("    override fun onCreate("):host.index("    private fun loadPersistedSettings()") ]
+required=("DiPlayBootstrap.ensure(this)","initializeSessionLog()","loadPersistedSettings()","setContentView(buildContentView())","applyFullscreenMode()","adoptBackgroundSession()","requestStartupPrerequisites()")
+positions=[startup.index(token) for token in required]
+assert positions==sorted(positions), "Host startup initialization order changed"
+print("PASS: real onCreate retains original UI, settings, diagnostics and permission startup")
 print(f"PASS: {len(protected)} protocol/media/USB/MFi files byte-identical; complete wired controller block byte-identical")
 print("PASS: MFi -> PHONE_BOUND -> network ordering, ownership and handoff guards, controller exit gate")
 print("Actual source changes:")

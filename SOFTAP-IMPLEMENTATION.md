@@ -120,3 +120,7 @@ reconnect, repeated USB unplug/replug and manual Existing LAN must be verified
 on hardware. Unit tests and an APK build do not prove these outcomes. The
 previous DiPlay 0.2.13 USB crash investigation has no confirmed fatal log and
 is not claimed fixed by this architecture change.
+
+## Host startup regression correction
+
+The first SoftAP APK accidentally removed the original onCreate initialization while changing an attachment branch. That prevented the preparation view, settings, identity, diagnostics and permission flow from being created. The original lifecycle initialization is restored; the layout is unchanged. CarPlayHostStartupTest runs real onCreate/start/resume/visible on API 28 in USB and Wireless AP modes, checks the actual window panel and startup fields, and holds hardware authorization pending. Only authentication asset provisioning is bypassed. The build also statically rejects missing startup calls in the reconstructed patch. VersionCode 215 identifies this correction. Hardware acceptance remains required.
