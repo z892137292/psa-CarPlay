@@ -1,6 +1,6 @@
 --- a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
 +++ b/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
-@@ -920,7 +920,7 @@
+@@ -920,20 +920,23 @@
          root.addView(video, FrameLayout.LayoutParams(-1, -1))
          root.addView(gestureLayer, FrameLayout.LayoutParams(-1, -1))
          val body=CarPlayShell.column(this)
@@ -9,15 +9,28 @@
          val card=CarPlayShell.card(this)
          phoneTitleView=CarPlayShell.label(this,DiPlayPreferences.phoneName(this),28f);card.addView(phoneTitleView)
          val stage=CarPlayShell.label(this,"正在连接 iPhone…",24f)
-@@ -932,7 +932,7 @@
-         },LinearLayout.LayoutParams(-1,dp(64)).apply { topMargin=dp(18) })
-         card.addView(CarPlayShell.button(this,"重新连接") { restartCarPlay("User retry") },LinearLayout.LayoutParams(-1,dp(60)).apply { topMargin=dp(12) })
-         card.addView(CarPlayShell.button(this,"打开网络设置") {
+         card.addView(stage)
+         progressStepsView=CarPlayShell.label(this,"蓝牙 · 确认手机\n网络 · 准备连接\n画面就绪后自动进入 CarPlay",19f);card.addView(progressStepsView)
+-        card.addView(CarPlayShell.button(this,"取消连接") {
++        val actions=LinearLayout(this)
++        fun action(label: String,work: ()->Unit) {
++            actions.addView(CarPlayShell.button(this,label,work),LinearLayout.LayoutParams(0,dp(64),1f).apply { rightMargin=dp(12) })
++        }
++        action("取消连接") {
+             carPlayUi.disconnected(restartGeneration);updateDebugOverlays()
+             shutdown(false,"User cancelled connection") { showDiPlayHome();finish() }
+-        },LinearLayout.LayoutParams(-1,dp(64)).apply { topMargin=dp(18) })
+-        card.addView(CarPlayShell.button(this,"重新连接") { restartCarPlay("User retry") },LinearLayout.LayoutParams(-1,dp(60)).apply { topMargin=dp(12) })
+-        card.addView(CarPlayShell.button(this,"打开网络设置") {
 -            runCatching { startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS)) }
-+            NetworkSettingsLauncher.wifi(this)
-         },LinearLayout.LayoutParams(-1,dp(60)).apply { topMargin=dp(12) })
+-        },LinearLayout.LayoutParams(-1,dp(60)).apply { topMargin=dp(12) })
++        }
++        action("重新连接") { restartCarPlay("User retry") }
++        action("打开网络设置") { NetworkSettingsLauncher.wifi(this) }
++        card.addView(actions,LinearLayout.LayoutParams(-1,-2).apply { topMargin=dp(18) })
          body.addView(card)
          val panel=CarPlayShell.layout(this,"home",{ target ->
+             startActivity(Intent(this,DiPlayActivity::class.java).putExtra("page",target))
 --- a/common/src/main/java/com/shilapi/xcertplay/CarPlayShell.kt
 +++ b/common/src/main/java/com/shilapi/xcertplay/CarPlayShell.kt
 @@ -26,7 +26,7 @@
@@ -426,7 +439,7 @@
          if (text == null || !text.matches(Regex("(?i)[0-9a-f]{2}(:[0-9a-f]{2}){5}"))) return null
 --- /dev/null
 +++ b/shared/src/main/java/com/shilapi/xcertplay/network/NetworkIdentityResolver.kt
-@@ -0,0 +1,64 @@
+@@ -0,0 +1,66 @@
 +package com.shilapi.xcertplay.network
 +
 +import android.Manifest
@@ -461,6 +474,8 @@
 +        val addresses: List<String>, val networkCount: Int) {
 +        fun diagnostic() = "role=${if(network!=null && interfaceName!=null) NetworkInterfaceRole.STA else NetworkInterfaceRole.UNKNOWN} staInterface=$interfaceName staSsidRaw=$rawSsid staSsidNormalized=$ssid staBssid=${info?.bssid} staFrequency=${info?.frequency} staRssi=${info?.rssi} staAddresses=$addresses staNetworkCount=$networkCount staChannel=${info?.frequency?.let(::wifiFrequencyMhzToChannel)} linkSpeed=${info?.linkSpeed} networkId=${info?.networkId} ssidPermission=$finePermission coarsePermission=$coarsePermission locationEnabled=$locationEnabled nearbyWifiPermission=$nearbyPermission ssidStatus=$reason"
 +    }
++    // Runtime checks below are shared helpers, which Android lint cannot follow through lambdas.
++    @android.annotation.SuppressLint("MissingPermission")
 +    fun resolve(network: Network? = null): Identity {
 +        val cm=context.getSystemService(ConnectivityManager::class.java)
 +        fun station(n: Network)=cm?.getNetworkCapabilities(n)?.let { it.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) && !it.hasTransport(NetworkCapabilities.TRANSPORT_VPN) }==true
@@ -475,14 +490,14 @@
 +        val coarse=granted(Manifest.permission.ACCESS_COARSE_LOCATION)
 +        val nearby=Build.VERSION.SDK_INT<33 || granted(Manifest.permission.NEARBY_WIFI_DEVICES)
 +        val location=runCatching { context.getSystemService(LocationManager::class.java)?.isLocationEnabled==true }.getOrDefault(false)
++        val permission=if(Build.VERSION.SDK_INT>=29) fine else fine || coarse
 +        val modern=if(station && Build.VERSION.SDK_INT>=29) caps?.transportInfo as? WifiInfo else null
 +        @Suppress("DEPRECATION")
-+        val legacy=if(station && (modern==null || normalizeSsid(modern.ssid)==null)) runCatching { context.getSystemService(WifiManager::class.java)?.connectionInfo }.getOrNull() else null
++        val legacy=if(station && permission && location && (modern==null || normalizeSsid(modern.ssid)==null)) runCatching { context.getSystemService(WifiManager::class.java)?.connectionInfo }.getOrNull() else null
 +        // Legacy has process-wide scope: use only when a single physical STA link is visible.
 +        val links=cm?.allNetworks.orEmpty().filter { cm?.getNetworkCapabilities(it)?.let { caps -> caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) && !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) }==true }.mapNotNull { cm?.getLinkProperties(it)?.interfaceName }.distinct()
 +        val info=modern?.takeIf { normalizeSsid(it.ssid)!=null } ?: legacy?.takeIf { links.size==1 && it.networkId>=0 } ?: modern
 +        val raw=runCatching { info?.ssid }.getOrNull()
-+        val permission=if(Build.VERSION.SDK_INT>=29) fine else fine || coarse
 +        val ssid=if(permission && location) normalizeSsid(raw) else null
 +        val reason=when { !station -> "STA_NETWORK_UNAVAILABLE"; !permission -> "SSID_PERMISSION_DENIED"; !location -> "SSID_LOCATION_DISABLED"; ssid==null -> "SSID_UNAVAILABLE"; else -> "SSID_CONFIRMED" }
 +        return Identity(chosen,name,info,raw,ssid,reason,location,fine,coarse,nearby,chosen?.let { cm?.getLinkProperties(it)?.linkAddresses?.map { it.address.hostAddress.orEmpty() } }.orEmpty(),candidates.size)

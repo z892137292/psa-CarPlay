@@ -91,7 +91,7 @@ index 0000000..cb9acf4
 +    }
 +}
 diff --git a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt b/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
-index f91a557..3a3764c 100644
+index f91a557..dc4d2b8 100644
 --- a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
 +++ b/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
 @@ -21,6 +21,7 @@ import android.os.Bundle
@@ -225,7 +225,7 @@ index f91a557..3a3764c 100644
          psaDiagnostics?.stop()
          psaDiagnostics = null
          sessionLog?.append("Activity destroyed")
-@@ -899,49 +919,29 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -899,49 +919,32 @@ class CarPlayHostActivity : ComponentActivity() {
          }
          root.addView(video, FrameLayout.LayoutParams(-1, -1))
          root.addView(gestureLayer, FrameLayout.LayoutParams(-1, -1))
@@ -279,14 +279,17 @@ index f91a557..3a3764c 100644
 +        val stage=CarPlayShell.label(this,"正在连接 iPhone…",24f)
 +        card.addView(stage)
 +        progressStepsView=CarPlayShell.label(this,"蓝牙 · 确认手机\n网络 · 准备连接\n画面就绪后自动进入 CarPlay",19f);card.addView(progressStepsView)
-+        card.addView(CarPlayShell.button(this,"取消连接") {
++        val actions=LinearLayout(this)
++        fun action(label: String,work: ()->Unit) {
++            actions.addView(CarPlayShell.button(this,label,work),LinearLayout.LayoutParams(0,dp(64),1f).apply { rightMargin=dp(12) })
++        }
++        action("取消连接") {
 +            carPlayUi.disconnected(restartGeneration);updateDebugOverlays()
 +            shutdown(false,"User cancelled connection") { showDiPlayHome();finish() }
-+        },LinearLayout.LayoutParams(-1,dp(64)).apply { topMargin=dp(18) })
-+        card.addView(CarPlayShell.button(this,"重新连接") { restartCarPlay("User retry") },LinearLayout.LayoutParams(-1,dp(60)).apply { topMargin=dp(12) })
-+        card.addView(CarPlayShell.button(this,"打开网络设置") {
-+            NetworkSettingsLauncher.wifi(this)
-+        },LinearLayout.LayoutParams(-1,dp(60)).apply { topMargin=dp(12) })
++        }
++        action("重新连接") { restartCarPlay("User retry") }
++        action("打开网络设置") { NetworkSettingsLauncher.wifi(this) }
++        card.addView(actions,LinearLayout.LayoutParams(-1,-2).apply { topMargin=dp(18) })
 +        body.addView(card)
 +        val panel=CarPlayShell.layout(this,"home",{ target ->
 +            startActivity(Intent(this,DiPlayActivity::class.java).putExtra("page",target))
@@ -298,7 +301,7 @@ index f91a557..3a3764c 100644
          videoView = video
          gestureOverlay = gestureLayer
          stageStatusView = stage
-@@ -2379,7 +2379,7 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -2379,7 +2382,7 @@ class CarPlayHostActivity : ComponentActivity() {
              }
          }
  
@@ -307,7 +310,7 @@ index f91a557..3a3764c 100644
  
  
      private fun validateMfiSettings(): Boolean {
-@@ -2403,7 +2403,7 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -2403,7 +2406,7 @@ class CarPlayHostActivity : ComponentActivity() {
      }
  
  
@@ -316,7 +319,7 @@ index f91a557..3a3764c 100644
  
      private fun menuText(
          text: String,
-@@ -2865,6 +2865,7 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -2865,6 +2868,7 @@ class CarPlayHostActivity : ComponentActivity() {
              },
              mediaBufferMillis = AirPlayPersistence.loadMediaBufferMillis(this),
              onAudioDiagnostic = { message ->
@@ -324,7 +327,7 @@ index f91a557..3a3764c 100644
                  if (message.startsWith("Microphone: ")) {
                      AsyncDiagnosticLog.append(diagnosticLog, message)
                  } else {
-@@ -2904,6 +2905,14 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -2904,6 +2908,14 @@ class CarPlayHostActivity : ComponentActivity() {
              }
  
              override fun onSessionActive(session: AirPlaySession) {
@@ -339,7 +342,7 @@ index f91a557..3a3764c 100644
                  if (controllerGeneration == restartGeneration) psaDiagnostics?.sessionActive()
                  if (controllerGeneration == restartGeneration) PsaConnectionState.set("AirPlay", "Connected")
                  runOnUiThread {
-@@ -2911,6 +2920,8 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -2911,6 +2923,8 @@ class CarPlayHostActivity : ComponentActivity() {
                          return@runOnUiThread
                      }
                      activeAirPlaySession = session
@@ -348,7 +351,7 @@ index f91a557..3a3764c 100644
                      PsaConnectionState.set("连接", "连接正常")
                      CarPlayBackgroundSession.active = true
                      reconnectAttempts = 0
-@@ -2935,6 +2946,10 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -2935,6 +2949,10 @@ class CarPlayHostActivity : ComponentActivity() {
                          return@runOnUiThread
                      }
                      activeScreenStreamTypes.clear()
@@ -359,7 +362,7 @@ index f91a557..3a3764c 100644
                      setConnectionStage(getString(R.string.carplay_session_ended_reconnecting))
                      appendLog("AirPlay session ended; reconnecting from scratch")
                      reconnectAfterLoss("AirPlay session ended")
-@@ -2952,6 +2967,10 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -2952,6 +2970,10 @@ class CarPlayHostActivity : ComponentActivity() {
                          return@runOnUiThread
                      }
                      activeScreenStreamTypes.clear()
@@ -370,7 +373,7 @@ index f91a557..3a3764c 100644
                      setConnectionStage(getString(R.string.transport_error_reconnecting))
                      appendLog("CarPlay transport error: $message; reconnecting from scratch")
                      reconnectAfterLoss("CarPlay transport error: $message")
-@@ -2969,6 +2988,7 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -2969,6 +2991,7 @@ class CarPlayHostActivity : ComponentActivity() {
                      if (controllerGeneration != restartGeneration) {
                          return@runOnUiThread
                      }
@@ -378,7 +381,7 @@ index f91a557..3a3764c 100644
                      DisplayDiagnosticSnapshot.record(this@CarPlayHostActivity, displayDiagnosticAttempt, message)
                      if (menuOpen) return@runOnUiThread
                      if (message.startsWith(PROTOCOL_TRACE_PREFIX)) {
-@@ -2990,6 +3010,9 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -2990,6 +3013,9 @@ class CarPlayHostActivity : ComponentActivity() {
              when (status) {
                  is CarPlayStatus.Failed -> if (activeAirPlaySession != null && !shuttingDown.get()) {
                      runOnUiThread { returnHomeAfterConfirmedLoss("TRANSPORT_FAILURE", System.nanoTime()) }
@@ -388,7 +391,7 @@ index f91a557..3a3764c 100644
                  } else if (status.manualRecoveryRequired) {
                      wifiRecoveryButton?.visibility = View.VISIBLE
                  } else {
-@@ -3001,6 +3024,19 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -3001,6 +3027,19 @@ class CarPlayHostActivity : ComponentActivity() {
          }
      }
  
@@ -408,7 +411,7 @@ index f91a557..3a3764c 100644
      private fun adoptBackgroundSession(): Boolean {
          if (CarPlayBackgroundSession.startBlocked()) return false
          val snapshot = CarPlayBackgroundSession.snapshot() ?: return false
-@@ -3009,8 +3045,12 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -3009,8 +3048,12 @@ class CarPlayHostActivity : ComponentActivity() {
              return false
          }
          displayDiagnosticAttempt = DisplayDiagnosticSnapshot.currentAttempt(this)
@@ -421,7 +424,7 @@ index f91a557..3a3764c 100644
          sessionDisplay = snapshot.display
          MapMirrors.reapply()
          CarPlayBackgroundSession.store(snapshot.controller, snapshot.sink, snapshot.width, snapshot.height,
-@@ -3049,14 +3089,18 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -3049,14 +3092,18 @@ class CarPlayHostActivity : ComponentActivity() {
              },
          )
          updateDebugOverlays()
@@ -441,7 +444,7 @@ index f91a557..3a3764c 100644
          val controllerGeneration = restartGeneration
          val config = createRuntimeConfig()
          intent.removeExtra("psa_hotspot_manual_confirmed")
-@@ -3127,6 +3171,12 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -3127,6 +3174,12 @@ class CarPlayHostActivity : ComponentActivity() {
              },
          )
          controller = next
@@ -454,7 +457,7 @@ index f91a557..3a3764c 100644
          CarPlayMediaKeys.attach(this, next)
          if (airPlayConfig.videoInCar) CarPlayVideo.attach(this, next)
          val display = CarPlaySessionDisplay(airPlayConfig.main.widthPixels, airPlayConfig.main.heightPixels,
-@@ -3292,6 +3342,10 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -3292,6 +3345,10 @@ class CarPlayHostActivity : ComponentActivity() {
      private fun returnHomeAfterConfirmedLoss(reason: String, eventNanos: Long) {
          activeAirPlaySession = null
          activeScreenStreamTypes.clear()
@@ -465,7 +468,7 @@ index f91a557..3a3764c 100644
          CarPlayBackgroundSession.active = false
          PsaConnectionState.set("连接", "等待重连")
          appendFileLog("CONNECTION_STATE state=DISCONNECTED reason=$reason eventNanos=$eventNanos")
-@@ -3308,7 +3362,7 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -3308,7 +3365,7 @@ class CarPlayHostActivity : ComponentActivity() {
      }
  
      private fun reconnectAfterLoss(reason: String) {
@@ -474,7 +477,7 @@ index f91a557..3a3764c 100644
              (reason.contains("NETWORK_IDENTITY_UNVERIFIED") || reason.contains("NETWORK_AMBIGUOUS") || reason.contains("IPV4_UNAVAILABLE"))) {
              setConnectionStage("LAN 网络身份未验证，请检查精确位置权限和 LAN 设置后人工连接")
              return
-@@ -3356,6 +3410,10 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -3356,6 +3413,10 @@ class CarPlayHostActivity : ComponentActivity() {
          val size = activeDisplaySize ?: return
          appendLog(reason)
          activeScreenStreamTypes.clear()
@@ -485,7 +488,7 @@ index f91a557..3a3764c 100644
          setConnectionStage(reason)
          Log.i(TAG, "$reason; rebuilding stack at ${size.width}x${size.height}")
          val generation = ++restartGeneration
-@@ -3399,7 +3457,13 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -3399,7 +3460,13 @@ class CarPlayHostActivity : ComponentActivity() {
                      }
                      CarPlayBackgroundSession.closed(oldController)
                      handshakeResetInProgress = false
@@ -500,7 +503,7 @@ index f91a557..3a3764c 100644
                  }
              }
          }
-@@ -3593,6 +3657,8 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -3593,6 +3660,8 @@ class CarPlayHostActivity : ComponentActivity() {
                  activeScreenStreamTypes.add(type)
              } else {
                  activeScreenStreamTypes.remove(type)
@@ -509,7 +512,7 @@ index f91a557..3a3764c 100644
              }
              if (type == SCREEN_TYPE_ALT) {
                  Log.i(ClusterMapPresentation.TAG, "cluster stream active=$active")
-@@ -3619,13 +3685,26 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -3619,13 +3688,26 @@ class CarPlayHostActivity : ComponentActivity() {
  
      private fun setConnectionStage(message: String) {
          latestStage = message
@@ -538,7 +541,7 @@ index f91a557..3a3764c 100644
      }
  
      private fun friendlyStage(message: String): String = when {
-@@ -3713,17 +3792,26 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -3713,17 +3795,26 @@ class CarPlayHostActivity : ComponentActivity() {
      private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
  
      private fun CarPlayStatus.describe(): String = when (this) {
@@ -570,7 +573,7 @@ index f91a557..3a3764c 100644
          CarPlayStatus.DiscoveringIphone -> getString(R.string.discovering_iphone)
          CarPlayStatus.WaitingForIphone -> getString(R.string.waiting_for_iphone_over_usb)
          CarPlayStatus.RequestingIphonePermission -> getString(R.string.requesting_iphone_usb_permission)
-@@ -3792,6 +3880,8 @@ internal data class CarPlaySessionDisplay(
+@@ -3792,6 +3883,8 @@ internal data class CarPlaySessionDisplay(
  /** Process-local hand-off for keeping the CarPlay session alive while no Activity is visible. */
  internal object CarPlayBackgroundSession {
      @Volatile var active = false
@@ -579,7 +582,7 @@ index f91a557..3a3764c 100644
      private var closingController: CarPlayController? = null
      @Synchronized fun beginClosing(candidate: CarPlayController?) { if (candidate != null) closingController = candidate }
      @Synchronized fun closed(candidate: CarPlayController?) { if (closingController === candidate) closingController = null }
-@@ -3863,6 +3953,8 @@ internal object CarPlayBackgroundSession {
+@@ -3863,6 +3956,8 @@ internal object CarPlayBackgroundSession {
          sink = null
          if (!keepOwner) { stopAction = null; owner = null }
          active = false
@@ -3193,10 +3196,10 @@ index 0000000..fca1e25
 +class ManualHotspotManager(context: Context,confirmed: Boolean,log: (String)->Unit={}): LanNetworkManager by SystemHotspotManager(context,confirmed,log)
 diff --git a/shared/src/main/java/com/shilapi/xcertplay/network/NetworkIdentityResolver.kt b/shared/src/main/java/com/shilapi/xcertplay/network/NetworkIdentityResolver.kt
 new file mode 100644
-index 0000000..469c717
+index 0000000..6d7641e
 --- /dev/null
 +++ b/shared/src/main/java/com/shilapi/xcertplay/network/NetworkIdentityResolver.kt
-@@ -0,0 +1,64 @@
+@@ -0,0 +1,66 @@
 +package com.shilapi.xcertplay.network
 +
 +import android.Manifest
@@ -3231,6 +3234,8 @@ index 0000000..469c717
 +        val addresses: List<String>, val networkCount: Int) {
 +        fun diagnostic() = "role=${if(network!=null && interfaceName!=null) NetworkInterfaceRole.STA else NetworkInterfaceRole.UNKNOWN} staInterface=$interfaceName staSsidRaw=$rawSsid staSsidNormalized=$ssid staBssid=${info?.bssid} staFrequency=${info?.frequency} staRssi=${info?.rssi} staAddresses=$addresses staNetworkCount=$networkCount staChannel=${info?.frequency?.let(::wifiFrequencyMhzToChannel)} linkSpeed=${info?.linkSpeed} networkId=${info?.networkId} ssidPermission=$finePermission coarsePermission=$coarsePermission locationEnabled=$locationEnabled nearbyWifiPermission=$nearbyPermission ssidStatus=$reason"
 +    }
++    // Runtime checks below are shared helpers, which Android lint cannot follow through lambdas.
++    @android.annotation.SuppressLint("MissingPermission")
 +    fun resolve(network: Network? = null): Identity {
 +        val cm=context.getSystemService(ConnectivityManager::class.java)
 +        fun station(n: Network)=cm?.getNetworkCapabilities(n)?.let { it.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) && !it.hasTransport(NetworkCapabilities.TRANSPORT_VPN) }==true
@@ -3245,14 +3250,14 @@ index 0000000..469c717
 +        val coarse=granted(Manifest.permission.ACCESS_COARSE_LOCATION)
 +        val nearby=Build.VERSION.SDK_INT<33 || granted(Manifest.permission.NEARBY_WIFI_DEVICES)
 +        val location=runCatching { context.getSystemService(LocationManager::class.java)?.isLocationEnabled==true }.getOrDefault(false)
++        val permission=if(Build.VERSION.SDK_INT>=29) fine else fine || coarse
 +        val modern=if(station && Build.VERSION.SDK_INT>=29) caps?.transportInfo as? WifiInfo else null
 +        @Suppress("DEPRECATION")
-+        val legacy=if(station && (modern==null || normalizeSsid(modern.ssid)==null)) runCatching { context.getSystemService(WifiManager::class.java)?.connectionInfo }.getOrNull() else null
++        val legacy=if(station && permission && location && (modern==null || normalizeSsid(modern.ssid)==null)) runCatching { context.getSystemService(WifiManager::class.java)?.connectionInfo }.getOrNull() else null
 +        // Legacy has process-wide scope: use only when a single physical STA link is visible.
 +        val links=cm?.allNetworks.orEmpty().filter { cm?.getNetworkCapabilities(it)?.let { caps -> caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) && !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) }==true }.mapNotNull { cm?.getLinkProperties(it)?.interfaceName }.distinct()
 +        val info=modern?.takeIf { normalizeSsid(it.ssid)!=null } ?: legacy?.takeIf { links.size==1 && it.networkId>=0 } ?: modern
 +        val raw=runCatching { info?.ssid }.getOrNull()
-+        val permission=if(Build.VERSION.SDK_INT>=29) fine else fine || coarse
 +        val ssid=if(permission && location) normalizeSsid(raw) else null
 +        val reason=when { !station -> "STA_NETWORK_UNAVAILABLE"; !permission -> "SSID_PERMISSION_DENIED"; !location -> "SSID_LOCATION_DISABLED"; ssid==null -> "SSID_UNAVAILABLE"; else -> "SSID_CONFIRMED" }
 +        return Identity(chosen,name,info,raw,ssid,reason,location,fine,coarse,nearby,chosen?.let { cm?.getLinkProperties(it)?.linkAddresses?.map { it.address.hostAddress.orEmpty() } }.orEmpty(),candidates.size)
