@@ -85,7 +85,7 @@ jobs:
             echo 'Baseline certificate unavailable; overwrite-install compatibility UNKNOWN.' > out/APK-COMPATIBILITY.txt
           fi
           cp SOFTAP-IMPLEMENTATION.md CHANGED-SOURCE-SOFTAP.txt patches/psa-0.2.12-to-softap.diff out/
-          cp NETWORK-UI-IMPLEMENTATION.md CHANGED-SOURCE-NETWORK-UI.txt patches/psa-0.2.15-to-0.2.16-network-ui.diff out/
+          cp LAUNCHER-BASELINE.md NETWORK-UI-IMPLEMENTATION.md CHANGED-SOURCE-NETWORK-UI.txt patches/psa-0.2.15-to-0.2.16-network-ui.diff out/
           cp UI-IMPLEMENTATION.md patches/psa-0.2.14-ui-fix-to-0.2.15-ui.diff "$RUNNER_TEMP/PSA-UI-SOURCE-CHECK.txt" out/
           cp "$RUNNER_TEMP/PSA-SOURCE-CHECK.txt" "$RUNNER_TEMP/PSA-LINT-COMPARISON.txt" out/
           cp -r upstream/shared/build/reports/lint* out/

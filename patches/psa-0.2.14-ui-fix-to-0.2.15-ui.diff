@@ -801,7 +801,7 @@
 +            val sta=runCatching { com.shilapi.xcertplay.network.NetworkIdentityResolver(this).resolve().diagnostic() }.getOrElse { "STA read failed: ${it.javaClass.simpleName}" }
 +            val ap=runCatching { com.shilapi.xcertplay.network.ExistingSystemAp(this).snapshot() }.getOrNull()
 +            val airplay=CarPlayBackgroundSession.snapshot()?.controller?.networkDiagnosticSnapshot() ?: "AirPlay: listener unavailable peer unavailable"
-+            val report="NETWORK_MODE_DIAG requestedMode=${AirPlayPersistence.loadConnectionMode(this)} configuredNetworkMode=${AirPlayPersistence.loadWirelessHotspotMode(this)} fallbackMode=NONE\n$sta\nCar Hotspot: state=${ap?.enabled} SSID=${ap?.ssid ?: "HOTSPOT_SSID_UNAVAILABLE"} interface=${ap?.link?.name} IPv4/IPv6=${ap?.link?.addresses} frequency=${ap?.actualFrequency} channel=${ap?.configuredChannel}\n$airplay"
++            val report="NETWORK_MODE_DIAG requestedMode=${AirPlayPersistence.loadConnectionMode(this)} configuredNetworkMode=${AirPlayPersistence.loadWirelessHotspotMode(this)} fallbackMode=NONE\n$sta\nCar Hotspot: hotspotDetected=${ap?.enabled==true} hotspotState=${ap?.enabled} hotspotSsid=${ap?.ssid ?: "HOTSPOT_SSID_UNAVAILABLE"} hotspotInterface=${ap?.link?.name} hotspotSecurity=${ap?.security} hotspotIpv4=${ap?.link?.addresses?.filterIsInstance<java.net.Inet4Address>()} hotspotIpv6=${ap?.link?.addresses?.filterIsInstance<java.net.Inet6Address>()} hotspotFrequency=${ap?.actualFrequency} hotspotBand=${ap?.actualFrequency?.let { if(it<2500) "2.4 GHz" else "5 GHz" } ?: "UNKNOWN"} hotspotChannel=${ap?.configuredChannel}\n$airplay"
 +            runOnUiThread { if(page=="diagnostics" && networkDiagnosticView===networkText && networkText.text.toString()!=report) networkText.text=report;networkDiagnosticPending.set(false) }
 +        },"network-diagnostics-ui").start()
      }
@@ -1322,7 +1322,7 @@
 -                val liveSsid = readableSsid(info)
 +                val identity = resolver.resolve(network)
 +                val info = identity.info
-+                onDiagnostic("NETWORK_MODE_DIAG selectedMode=EXISTING_LAN resolvedMode=EXISTING_LAN staNetworkCount=${networks.size} ${identity.diagnostic()} staIpv4=${addresses.filterIsInstance<java.net.Inet4Address>()} staIpv6=${addresses.filterIsInstance<java.net.Inet6Address>()}")
++                onDiagnostic("NETWORK_MODE_DIAG requestedMode=EXISTING_LAN resolvedMode=EXISTING_LAN fallbackMode=NONE staNetworkCount=${networks.size} ${identity.diagnostic()} staIpv4=${addresses.filterIsInstance<java.net.Inet4Address>()} staIpv6=${addresses.filterIsInstance<java.net.Inet6Address>()}")
 +                val liveSsid = identity.ssid
 +                if(liveSsid==null) throw LanConnectionException(LanFailure.NETWORK_IDENTITY_UNVERIFIED, identity.reason+": 请允许位置权限、开启定位并重新读取网络名称")
                  if (ssid.isBlank() && liveSsid != null) ssid = liveSsid
@@ -1408,7 +1408,7 @@
 +        val rawSsid: String?, val ssid: String?, val reason: String, val locationEnabled: Boolean,
 +        val finePermission: Boolean, val coarsePermission: Boolean, val nearbyPermission: Boolean,
 +        val addresses: List<String>, val networkCount: Int) {
-+        fun diagnostic() = "role=${if(network!=null && interfaceName!=null) NetworkInterfaceRole.STA else NetworkInterfaceRole.UNKNOWN} staInterface=$interfaceName staSsidRaw=$rawSsid staSsidNormalized=$ssid staBssid=${info?.bssid} staFrequency=${info?.frequency} staRssi=${info?.rssi} staAddresses=$addresses staNetworkCount=$networkCount staChannel=${info?.frequency?.let(::wifiFrequencyMhzToChannel)} linkSpeed=${info?.linkSpeed} networkId=${info?.networkId} ssidPermission=$finePermission coarsePermission=$coarsePermission locationEnabled=$locationEnabled nearbyWifiPermission=$nearbyPermission ssidStatus=$reason"
++        fun diagnostic() = "role=${if(network!=null && interfaceName!=null) NetworkInterfaceRole.STA else NetworkInterfaceRole.UNKNOWN} staInterface=$interfaceName staSsidRaw=$rawSsid staSsidNormalized=$ssid staBssid=${info?.bssid} staFrequency=${info?.frequency} staRssi=${info?.rssi} staAddresses=$addresses staIpv4=${addresses.filter { !it.contains(':') }} staIpv6=${addresses.filter { it.contains(':') }} staNetworkCount=$networkCount staChannel=${info?.frequency?.let(::wifiFrequencyMhzToChannel)} staLinkSpeed=${info?.linkSpeed} networkId=${info?.networkId} locationPermission=${if(Build.VERSION.SDK_INT>=29) finePermission else finePermission || coarsePermission} finePermission=$finePermission coarsePermission=$coarsePermission locationEnabled=$locationEnabled nearbyWifiPermission=$nearbyPermission ssidStatus=$reason"
 +    }
 +    // Runtime checks below are shared helpers, which Android lint cannot follow through lambdas.
 +    @android.annotation.SuppressLint("MissingPermission")
@@ -1420,7 +1420,7 @@
 +        }==true
 +        val candidates=cm?.allNetworks.orEmpty().filter(::station)
 +        val physicalLinks=candidates.mapNotNull { cm?.getLinkProperties(it)?.interfaceName }.distinct()
-+        val chosen=network ?: cm?.activeNetwork?.takeIf(::station) ?: candidates.firstOrNull().takeIf { physicalLinks.size==1 }
++        val chosen=if(network!=null) network.takeIf(::station) else cm?.activeNetwork?.takeIf(::station) ?: candidates.firstOrNull().takeIf { physicalLinks.size==1 }
 +        val caps=chosen?.let { cm?.getNetworkCapabilities(it) }
 +        val station=caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)==true && !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
 +        val name=if(station) chosen?.let { cm?.getLinkProperties(it)?.interfaceName } else null
@@ -1480,7 +1480,7 @@
 +    fun currentAirPlaySession(): AirPlaySession? = activeSession
 +
 +    fun boundPhoneName(): String? = boundPhone?.bluetoothDeviceName
-+    fun networkDiagnosticSnapshot(): String = "AirPlay bind interface=${boundPhone?.expectedNetworkInterface} bind addresses=${vpnService?.boundAddresses()} port=${vpnService?.boundPort()} peer=${boundPhone?.airPlayPeerAddress} state=${if(activeSession!=null) "active" else "waiting"}"
++    fun networkDiagnosticSnapshot(): String = "resolvedMode=${if(boundPhone?.expectedNetworkInterface!=null) when(config.wirelessHotspotMode) { WirelessHotspotMode.SYSTEM_HOTSPOT -> "MANUAL_HOTSPOT";WirelessHotspotMode.EXISTING_LAN, WirelessHotspotMode.EXISTING_WIFI -> "EXISTING_LAN";WirelessHotspotMode.WIRELESS_AP -> "SOFTAP_MANAGED" } else if(config.transport==CarPlayTransport.WIRED && activeSession!=null) "USB" else "UNKNOWN"} AirPlay airplayBindInterface=${boundPhone?.expectedNetworkInterface} airplayBindAddress=${vpnService?.boundAddresses()} airplayPort=${vpnService?.boundPort()} airplayPeer=${boundPhone?.airPlayPeerAddress} state=${if(activeSession!=null) "active" else "waiting"}"
 +    fun boundNetworkReady(): Boolean = boundPhone?.expectedNetworkInterface!=null
 +
 +    fun boundBluetoothAddress(): String? = boundPhone?.bluetoothAddress
