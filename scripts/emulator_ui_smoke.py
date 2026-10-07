@@ -34,6 +34,14 @@ def check(name,*required):
  (OUT/(name+'.xml')).write_text(E.tostring(root,encoding='unicode'))
  for text in required:assert any(text in s for s in texts),(name,text,texts)
  return texts
+def scroll_to(text):
+ for attempt in range(8):
+  root=dump()
+  if any(text in n.get('text','') for n in root.iter('node')):return
+  scroll=next(n for n in root.iter('node') if n.get('scrollable')=='true')
+  x1,y1,x2,y2=map(int,re.findall(r'\d+',scroll.get('bounds')))
+  adb('shell','input','swipe',str((x1+x2)//2),str(y2-80),str((x1+x2)//2),str(y1+100),'500');time.sleep(.5)
+ raise AssertionError('Cannot scroll to '+text)
 def save_logcat():
  with (OUT/'logcat.txt').open('w') as f:subprocess.run(['adb','logcat','-d','-v','threadtime'],stdout=f,stderr=subprocess.DEVNULL)
 atexit.register(save_logcat)
@@ -41,11 +49,12 @@ apk=next(Path('out').glob('*.apk'));adb('install','-r',str(apk))
 for perm in ['RECORD_AUDIO','ACCESS_FINE_LOCATION','ACCESS_COARSE_LOCATION','WRITE_EXTERNAL_STORAGE']:
  subprocess.run(['adb','shell','pm','grant',PKG,'android.permission.'+perm],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
 adb('shell','wm','size','2250x1080');adb('shell','wm','density','160')
+assert 'Override size: 2250x1080' in adb('shell','wm','size'),'Emulator clamped requested head-unit dimensions'
 adb('shell','am','force-stop',PKG);launch(None)
 texts=check('auto-cold-launch','PSA CarPlay')
 assert any(t in texts for t in ['连接手机','取消连接']),'Automatic cold launch has no usable connection controls'
 adb('shell','am','force-stop',PKG);launch('settings');check('settings','PSA CarPlay','首选连接方式')
-adb('shell','input','swipe','1500','950','1500','260','500');time.sleep(.5)
+scroll_to('保持屏幕唤醒')
 check('settings-scrolled','PSA CarPlay','保持屏幕唤醒')
 # Stop automatic connection so the no-phone cold-start and each explicit retry are separate.
 # This edits the same user preference as the UI toggle, using debuggable run-as.
@@ -63,6 +72,8 @@ for i in range(10):
 adb('shell','wm','size','1080x2250');time.sleep(1);check('portrait','PSA CarPlay','取消连接')
 adb('shell','wm','size','2250x1080');time.sleep(1);check('landscape-restored','PSA CarPlay','取消连接')
 adb('shell','input','keyevent','3');launch(host=True);check('foreground-no-frame','取消连接')
+# Grant only the emulator's real VPN prerequisite; no USB device/session is injected.
+adb('shell','appops','set',PKG,'ACTIVATE_VPN','allow')
 adb('shell','am','force-stop',PKG);launch('connection');tap('USB CarPlay');tap('CarPlay');tap('连接手机');check('usb-absent','PSA CarPlay','取消连接')
 log=adb('logcat','-d','-v','threadtime');(OUT/'logcat.txt').write_text(log)
 assert not re.search(r'FATAL EXCEPTION[^\n]*\n(?:[^\n]*\n){0,3}[^\n]*Process: '+re.escape(PKG),log)
