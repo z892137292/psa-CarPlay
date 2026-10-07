@@ -2874,7 +2874,7 @@ index 597b4c6..ab68b7b 100644
          } catch (error: IOException) {
              if (active.get()) {
 diff --git a/shared/src/main/java/com/shilapi/xcertplay/network/ExistingSystemAp.kt b/shared/src/main/java/com/shilapi/xcertplay/network/ExistingSystemAp.kt
-index 0e10b7a..15040c1 100644
+index 0e10b7a..f833b46 100644
 --- a/shared/src/main/java/com/shilapi/xcertplay/network/ExistingSystemAp.kt
 +++ b/shared/src/main/java/com/shilapi/xcertplay/network/ExistingSystemAp.kt
 @@ -27,7 +27,7 @@ class ExistingSystemAp(context: Context) {
@@ -2891,7 +2891,7 @@ index 0e10b7a..15040c1 100644
              iface.isUp && !iface.isLoopback && iface.name !in stations &&
                  !iface.name.startsWith("p2p", true) &&
 -                (iface.name in tethered || iface.name.matches(Regex("(?i)(wlan|ap|swlan|wifi)[0-9]+|.*softap.*")))
-+                (iface.name in tethered || (enabled == true && interfaceHint.isNotBlank() && iface.name == interfaceHint))
++                (iface.name in tethered || (enabled != false && interfaceHint.isNotBlank() && iface.name == interfaceHint))
          }.mapNotNull { iface ->
              val addresses = existingWifiHostAddresses(iface.inetAddresses.toList(), iface.index)
              if (addresses.isEmpty()) null else Link(iface.name, iface.index, addresses,
@@ -3796,7 +3796,7 @@ index 0000000..5a1fce7
 +    fun elapsedMillis() = (now()-started)/1_000_000
 +}
 diff --git a/shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt b/shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt
-index c9e932e..03f151a 100644
+index c9e932e..ebae696 100644
 --- a/shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt
 +++ b/shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt
 @@ -102,6 +102,7 @@ sealed class CarPlayStatus {
@@ -4227,7 +4227,7 @@ index c9e932e..03f151a 100644
                          debugLog("tunneled iAP2 control failed", error)
                          onStatus(
                              CarPlayStatus.Failed(
-@@ -1341,6 +1385,29 @@ class CarPlayController(
+@@ -1341,6 +1385,32 @@ class CarPlayController(
  
      private fun wirelessSessionListener(generation: Int): AirPlaySessionListener =
          object : AirPlaySessionListener by sessionListener {
@@ -4238,7 +4238,10 @@ index c9e932e..03f151a 100644
 +                val clients=(hotspot as? com.shilapi.xcertplay.network.SessionSoftApManager)?.live?.clientIps.orEmpty()
 +                val accepted=!isStaleWirelessRun(generation) && boundPhone?.generationId == generation &&
 +                    boundPhone?.expectedNetworkAddress != null && boundPhone?.acceptPeer(peer.hostAddress ?: "",clients) == true
-+                if(accepted && !peer.isLoopbackAddress && !peer.isAnyLocalAddress && peer != local) existingLanEvidence.mark(generation,"FIRST_TCP_EXTERNAL")
++                val external=!peer.isLoopbackAddress && !peer.isAnyLocalAddress && peer != local && runCatching {
++                    java.net.NetworkInterface.getNetworkInterfaces().toList().none { iface -> iface.inetAddresses.toList().any { it.address.contentEquals(peer.address) } }
++                }.getOrDefault(false)
++                if(accepted && external) existingLanEvidence.mark(generation,"FIRST_TCP_EXTERNAL")
 +                if(accepted) { if(firstTcpPeer==null) { firstTcpPeer=peer; firstTcpElapsedMs=timeline?.elapsedMillis() }; timeline?.mark("FIRST_TCP"); wirelessDiag(peer) }
 +                else debugLog("WIRELESS_AP_DIAG generationId=$generation ownershipRejected=tcp peer=${peer.hostAddress}")
 +                return accepted
@@ -4257,7 +4260,7 @@ index c9e932e..03f151a 100644
              override fun onDebugLog(message: String) {
                  if (isStaleWirelessRun(generation)) return
                  if (message.startsWith("airplay TCP connection accepted") && message.contains("external=true"))
-@@ -1356,14 +1423,17 @@ class CarPlayController(
+@@ -1356,14 +1426,17 @@ class CarPlayController(
              }
  
              override fun onSessionActive(session: AirPlaySession) {
@@ -4277,7 +4280,7 @@ index c9e932e..03f151a 100644
                  sessionListener.onSessionEnded(session)
              }
  
-@@ -1371,6 +1441,8 @@ class CarPlayController(
+@@ -1371,6 +1444,8 @@ class CarPlayController(
                  if (isStaleWirelessRun(generation) || activeSession !== session) return
                  wirelessConnectionProof.rendered(generation, session)
                  lanDiagnostics?.mark("first_frame")
@@ -4286,7 +4289,7 @@ index c9e932e..03f151a 100644
              }
  
              // Passed on explicitly: without these the car's video player never opened over Wi-Fi.
-@@ -1390,6 +1462,10 @@ class CarPlayController(
+@@ -1390,6 +1465,10 @@ class CarPlayController(
              return
          }
          wirelessTunnelReady.set(true)
@@ -4297,7 +4300,7 @@ index c9e932e..03f151a 100644
          wirelessConnectionProof.authenticated(generation)
          debugLog(
              "wireless iAP2 tunnel ready; " +
-@@ -1399,7 +1475,7 @@ class CarPlayController(
+@@ -1399,7 +1478,7 @@ class CarPlayController(
      }
  
      private fun maybeCompleteWirelessHandoff() {
@@ -4306,7 +4309,7 @@ index c9e932e..03f151a 100644
          if (!wirelessActiveReported.compareAndSet(false, true)) return
          val generation = wirelessGeneration.get()
          Thread(
-@@ -1413,6 +1489,10 @@ class CarPlayController(
+@@ -1413,6 +1492,10 @@ class CarPlayController(
                  }
                  debugLog("wireless handoff ready; closing Bluetooth bootstrap transport")
                  closeBluetoothBootstrapTransport()
@@ -4317,7 +4320,7 @@ index c9e932e..03f151a 100644
                  onStatus(CarPlayStatus.WirelessActive)
              },
              "xcertplay-wireless-handoff",
-@@ -1454,11 +1534,12 @@ class CarPlayController(
+@@ -1454,11 +1537,12 @@ class CarPlayController(
                                  "wireless handoff tunnel iAP2 unavailable after first video frame; " +
                                      "preserving the active CarPlay session",
                              )
@@ -4332,7 +4335,7 @@ index c9e932e..03f151a 100644
                      },
                      "xcertplay-wireless-handoff-timeout",
                  ).apply {
-@@ -1888,20 +1969,44 @@ class CarPlayController(
+@@ -1888,20 +1972,44 @@ class CarPlayController(
  
      private fun startWirelessHotspot(generation: Int): LanNetworkInfo {
          val settings = appContext.getSharedPreferences("psa_lan", 0)
@@ -4380,7 +4383,7 @@ index c9e932e..03f151a 100644
      private fun isStaleWirelessRun(generation: Int): Boolean =
          closed || phase != Phase.WIRELESS || generation != wirelessGeneration.get()
  
-@@ -1910,9 +2015,10 @@ class CarPlayController(
+@@ -1910,9 +2018,10 @@ class CarPlayController(
  
      private fun selectWirelessBluetoothDevice(adapter: BluetoothAdapter): BluetoothDevice {
          val bonded = adapter.bondedDevices.orEmpty()
@@ -4394,7 +4397,7 @@ index c9e932e..03f151a 100644
          }
          val iPhones = bonded.filter { device ->
              device.name?.contains("iPhone", ignoreCase = true) == true
-@@ -1938,6 +2044,13 @@ class CarPlayController(
+@@ -1938,6 +2047,13 @@ class CarPlayController(
                      connectedIPhones.joinToString { "${it.name ?: "iPhone"} (${it.address})" },
              )
          }
@@ -4408,7 +4411,7 @@ index c9e932e..03f151a 100644
          if (iPhones.size == 1) return iPhones.single()
          if (iPhones.size > 1) {
              throw IOException(
-@@ -2014,6 +2127,10 @@ class CarPlayController(
+@@ -2014,6 +2130,10 @@ class CarPlayController(
      }
  
      @Synchronized private fun closeWirelessStack(service: CarPlayVpnService? = vpnService) {
@@ -4419,7 +4422,7 @@ index c9e932e..03f151a 100644
          debugLog("wireless teardown session-only architecture=USB_LAN")
          wirelessConnectionProof.clear()
          wirelessAuthenticated.set(false)
-@@ -2307,6 +2424,7 @@ class CarPlayController(
+@@ -2307,6 +2427,7 @@ class CarPlayController(
      }
  
      private fun CarPlayStatus.debugLogMessage(): String = when (this) {

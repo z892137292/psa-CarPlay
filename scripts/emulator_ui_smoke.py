@@ -36,7 +36,7 @@ def check(name,*required):
  root=dump();texts=[n.get('text','') for n in root.iter('node')]
  adb('shell','screencap','-p','/sdcard/psa-ui.png');adb('pull','/sdcard/psa-ui.png',str(OUT/(name+'.png')))
  (OUT/(name+'.xml')).write_text(E.tostring(root,encoding='unicode'))
- if name in {'cold-home','phones','connection','settings-1920','diagnostics','connecting-no-phone','network-not-ready'}:
+ if name in {'cold-home','phones','connection','settings-1920','diagnostics','connecting-no-phone','network-not-ready','network-failure'}:
   dimensions=struct.unpack('>II',(OUT/(name+'.png')).read_bytes()[16:24])
   assert dimensions==(1920,720),(name,'actual screenshot dimensions',dimensions)
  for text in required:assert any(text in s for s in texts),(name,text,texts)
@@ -70,12 +70,14 @@ check('settings-scrolled','PSA CarPlay','保持屏幕唤醒')
 xml='<map><boolean name="auto_connect" value="false" /></map>'
 subprocess.run(['adb','shell','run-as',PKG,'sh','-c',"'mkdir -p shared_prefs; cat > shared_prefs/diplay.xml'"],input=xml,text=True,check=True)
 adb('shell','am','force-stop',PKG);launch(cold=True);check('cold-home','PSA CarPlay','连接手机')
+check('network-failure','车机热点未开启')
 tap('手机');check('phones','未发现已配对')
 tap('连接');check('connection','车机热点')
 tap('诊断');check('diagnostics','连接诊断')
 tap('设置');check('settings-1920','Wi-Fi 设置','车机热点设置')
 tap('Wi-Fi 设置');time.sleep(1)
-assert 'WifiSettings' in adb('shell','dumpsys','activity','activities'), 'Wi-Fi button did not open WLAN settings'
+assert re.search(r'mResumedActivity[^\n]*WifiSettings',adb('shell','dumpsys','activity','activities')), 'Wi-Fi button did not resume WLAN settings'
+check('wifi-settings-opened')
 launch(cold=True)
 tap('连接');check('connection-return','车机热点')
 tap('CarPlay');tap('连接手机');check('connecting-no-phone','PSA CarPlay','取消连接')

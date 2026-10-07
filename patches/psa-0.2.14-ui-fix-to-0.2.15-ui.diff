@@ -1212,7 +1212,7 @@
              iface.isUp && !iface.isLoopback && iface.name !in stations &&
                  !iface.name.startsWith("p2p", true) &&
 -                (iface.name in tethered || iface.name.matches(Regex("(?i)(wlan|ap|swlan|wifi)[0-9]+|.*softap.*")))
-+                (iface.name in tethered || (enabled == true && interfaceHint.isNotBlank() && iface.name == interfaceHint))
++                (iface.name in tethered || (enabled != false && interfaceHint.isNotBlank() && iface.name == interfaceHint))
          }.mapNotNull { iface ->
              val addresses = existingWifiHostAddresses(iface.inetAddresses.toList(), iface.index)
              if (addresses.isEmpty()) null else Link(iface.name, iface.index, addresses,
@@ -1447,7 +1447,7 @@
                      }
                  },
                  addressFallback={
-@@ -1370,12 +1386,13 @@
+@@ -1370,12 +1386,16 @@
      private fun wirelessSessionListener(generation: Int): AirPlaySessionListener =
          object : AirPlaySessionListener by sessionListener {
              override fun onDataStreamReady(session: AirPlaySession, type: Int, port: Int) {
@@ -1458,11 +1458,14 @@
                  val clients=(hotspot as? com.shilapi.xcertplay.network.SessionSoftApManager)?.live?.clientIps.orEmpty()
                  val accepted=!isStaleWirelessRun(generation) && boundPhone?.generationId == generation &&
                      boundPhone?.expectedNetworkAddress != null && boundPhone?.acceptPeer(peer.hostAddress ?: "",clients) == true
-+                if(accepted && !peer.isLoopbackAddress && !peer.isAnyLocalAddress && peer != local) existingLanEvidence.mark(generation,"FIRST_TCP_EXTERNAL")
++                val external=!peer.isLoopbackAddress && !peer.isAnyLocalAddress && peer != local && runCatching {
++                    java.net.NetworkInterface.getNetworkInterfaces().toList().none { iface -> iface.inetAddresses.toList().any { it.address.contentEquals(peer.address) } }
++                }.getOrDefault(false)
++                if(accepted && external) existingLanEvidence.mark(generation,"FIRST_TCP_EXTERNAL")
                  if(accepted) { if(firstTcpPeer==null) { firstTcpPeer=peer; firstTcpElapsedMs=timeline?.elapsedMillis() }; timeline?.mark("FIRST_TCP"); wirelessDiag(peer) }
                  else debugLog("WIRELESS_AP_DIAG generationId=$generation ownershipRejected=tcp peer=${peer.hostAddress}")
                  return accepted
-@@ -1387,7 +1404,7 @@
+@@ -1387,7 +1407,7 @@
                      (ownedWirelessSession.get() === session || ownedWirelessSession.get()==null) &&
                      boundPhone?.acceptSetup(session.host,deviceId,sessionUuid)==true &&
                      (ownedWirelessSession.get() === session || ownedWirelessSession.compareAndSet(null,session))
@@ -1471,7 +1474,7 @@
                  else debugLog("WIRELESS_AP_DIAG generationId=$generation ownershipRejected=setup peer=${session.host}")
                  return accepted
              }
-@@ -1416,6 +1433,7 @@
+@@ -1416,6 +1436,7 @@
              override fun onSessionEnded(session: AirPlaySession) {
                  if (isStaleWirelessRun(generation) || !ownedWirelessSession.compareAndSet(session,null)) return
                  wirelessConnectionProof.end(generation, session)
@@ -1479,7 +1482,7 @@
                  sessionListener.onSessionEnded(session)
              }
  
-@@ -1424,6 +1442,7 @@
+@@ -1424,6 +1445,7 @@
                  wirelessConnectionProof.rendered(generation, session)
                  lanDiagnostics?.mark("first_frame")
                  timeline?.mark("FIRST_FRAME")
@@ -1487,7 +1490,7 @@
              }
  
              // Passed on explicitly: without these the car's video player never opened over Wi-Fi.
-@@ -1445,6 +1464,7 @@
+@@ -1445,6 +1467,7 @@
          wirelessTunnelReady.set(true)
          boundPhone?.tunnelReady=true
          timeline?.mark("TUNNEL_READY")
@@ -1495,7 +1498,7 @@
          connectionState(ConnectionState.IAP_TUNNEL_READY)
          wirelessConnectionProof.authenticated(generation)
          debugLog(
-@@ -1472,6 +1492,7 @@
+@@ -1472,6 +1495,7 @@
                  boundPhone?.wirelessActive=true
                  wirelessDiag()
                  connectionState(ConnectionState.WIRELESS_ACTIVE)
@@ -1503,7 +1506,7 @@
                  onStatus(CarPlayStatus.WirelessActive)
              },
              "xcertplay-wireless-handoff",
-@@ -1952,7 +1973,7 @@
+@@ -1952,7 +1976,7 @@
          val manager: com.shilapi.xcertplay.network.LanNetworkManager = if(config.wirelessHotspotMode == WirelessHotspotMode.WIRELESS_AP)
              com.shilapi.xcertplay.network.SessionSoftApManager(appContext,::debugLog)
          else if (config.wirelessHotspotMode == WirelessHotspotMode.SYSTEM_HOTSPOT)
@@ -1512,7 +1515,7 @@
          else com.shilapi.xcertplay.network.ExistingWifiManager(appContext,
              settings.getString("ssid", "").orEmpty(), settings.getString("password", "").orEmpty(),
              ::debugLog, { if (!isStaleWirelessRun(generation)) fail(com.shilapi.xcertplay.network.LanConnectionException(
-@@ -1994,6 +2015,11 @@
+@@ -1994,6 +2018,11 @@
  
      private fun selectWirelessBluetoothDevice(adapter: BluetoothAdapter): BluetoothDevice {
          val bonded = adapter.bondedDevices.orEmpty()
@@ -1524,7 +1527,7 @@
          val iPhones = bonded.filter { device ->
              device.name?.contains("iPhone", ignoreCase = true) == true
          }
-@@ -2017,6 +2043,9 @@
+@@ -2017,6 +2046,9 @@
                  "Multiple connected iPhones found: " +
                      connectedIPhones.joinToString { "${it.name ?: "iPhone"} (${it.address})" },
              )
