@@ -50,6 +50,8 @@ for perm in ['RECORD_AUDIO','ACCESS_FINE_LOCATION','ACCESS_COARSE_LOCATION','WRI
  subprocess.run(['adb','shell','pm','grant',PKG,'android.permission.'+perm],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
 adb('shell','wm','size','2250x1080');adb('shell','wm','density','160')
 assert 'Override size: 2250x1080' in adb('shell','wm','size'),'Emulator clamped requested head-unit dimensions'
+# Android's first-use immersive tutorial obscures the app hierarchy; configure the test device.
+adb('shell','settings','put','secure','immersive_mode_confirmations','confirmed')
 adb('shell','am','force-stop',PKG);launch(None)
 texts=check('auto-cold-launch','PSA CarPlay')
 assert any(t in texts for t in ['连接手机','取消连接']),'Automatic cold launch has no usable connection controls'

@@ -567,7 +567,7 @@ diff --git a/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt b/comm
      }
  
      override fun onStop() {
-@@ -169,106 +203,134 @@
+@@ -169,106 +203,135 @@
          if (!initialLaunch && (page == "home" || page == "settings" || page == "connection")) render()
          if (initialLaunch) {
              initialLaunch = false
@@ -700,14 +700,15 @@ diff --git a/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt b/comm
 +        val label=networkStatusView ?: return
 +        if(!networkReadPending.compareAndSet(false,true)) return
 +        Thread({
-+            val text=if(AirPlayPersistence.loadWirelessHotspotMode(this)==WirelessHotspotMode.SYSTEM_HOTSPOT) {
++            val wired=CarPlayBackgroundSession.snapshot()?.controller?.sessionTransport()==com.shilapi.xcertplay.orchestration.CarPlayTransport.WIRED || AirPlayPersistence.loadConnectionMode(this)==com.shilapi.xcertplay.orchestration.ConnectionMode.USB
++            val text=if(wired) "USB CarPlay · "+(if(CarPlayBackgroundSession.frameReady) "已连接" else "等待连接")
++            else if(AirPlayPersistence.loadWirelessHotspotMode(this)==WirelessHotspotMode.SYSTEM_HOTSPOT) {
 +                runCatching {
 +                    val live=com.shilapi.xcertplay.network.ExistingSystemAp(this).snapshot(getSharedPreferences("psa_hotspot",0).getString("interface","").orEmpty())
 +                    if(live.enabled==false || live.link==null) "车机热点未开启，请打开网络设置"
 +                    else "车机热点 · "+(live.actualFrequency?.let { if(it>=5000) "5 GHz" else "2.4 GHz" } ?: "频段待确认")+" · "+if(CarPlayBackgroundSession.snapshot()?.controller?.currentAirPlaySession()!=null) "iPhone 已连接" else "等待 iPhone"
 +                }.getOrDefault("热点状态不可读，请查看连接页")
-+            } else if(AirPlayPersistence.loadConnectionMode(this)==com.shilapi.xcertplay.orchestration.ConnectionMode.USB) "USB CarPlay · 等待数据线"
-+            else "无线网络 · "+if(CarPlayBackgroundSession.frameReady) "已连接" else "等待连接"
++            } else "无线网络 · "+if(CarPlayBackgroundSession.frameReady) "已连接" else "等待连接"
 +            runOnUiThread { if(networkStatusView===label) label.text=text;networkReadPending.set(false) }
 +        },"network-card-ui").start()
 +    }
@@ -786,7 +787,7 @@ diff --git a/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt b/comm
          content.addView(label(getString(R.string.your_drive_your_way), 34, TEXT, true))
          content.addView(label(getString(R.string.apply_reconnects_carplay_for_size_resolution_music_buffer), 17, MUTED).apply { setPadding(0, dp(8), 0, dp(24)) })
          section(content, getString(R.string.connection_setup), R.drawable.ic_dp_connection) { card ->
-@@ -528,58 +590,46 @@
+@@ -528,58 +591,46 @@
      }
  
  
@@ -881,24 +882,26 @@ diff --git a/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt b/comm
      }
      private fun showLiveNetwork(hotspot: Boolean) {
          Thread {
-@@ -943,13 +993,13 @@
+@@ -943,13 +994,14 @@
              CarPlayBackgroundSession.startBlocked() -> "等待重连 · 正在清理旧会话"
              com.shilapi.xcertplay.orchestration.PsaConnectionState.current() == "等待重连" -> "等待连接"
              setupError != null -> getString(R.string.setup_needs_attention)
 -            CarPlayBackgroundSession.active -> getString(R.string.carplay_connected)
 -            running -> getString(R.string.connecting_to_your_iphone)
-+            CarPlayBackgroundSession.frameReady -> "CarPlay 已连接"
++            CarPlayBackgroundSession.frameReady -> if(CarPlayBackgroundSession.snapshot()?.controller?.sessionTransport()==com.shilapi.xcertplay.orchestration.CarPlayTransport.WIRED) "USB CarPlay 已连接" else "无线 CarPlay 已连接"
 +            running -> ConnectionUiState.friendly(com.shilapi.xcertplay.orchestration.PsaConnectionState.current())
              DiPlayPreferences.phoneAddress(this) != null -> "${getString(R.string.status_ready_for_prefix)}${DiPlayPreferences.phoneName(this)}"
              else -> getString(R.string.ready_when_you_are)
          }
-         if (lastRunning != running) {
+-        if (lastRunning != running) {
 -            connectButton?.text = if (running) getString(R.string.open_carplay) else getString(R.string.connect_phone)
-+            connectButton?.text = if (running) { if(CarPlayBackgroundSession.frameReady) "进入 CarPlay" else "查看连接进度" } else "连接手机"
++        val connectTitle=if (running) { if(CarPlayBackgroundSession.frameReady) "进入 CarPlay" else "查看连接进度" } else "连接手机"
++        if (lastRunning != running || connectButton?.text?.toString()!=connectTitle) {
++            connectButton?.text = connectTitle
              disconnectButton?.visibility = if (running) View.VISIBLE else View.GONE
              disconnectButton?.isEnabled = true
              lastRunning = running
-@@ -1181,7 +1231,7 @@
+@@ -1181,7 +1233,7 @@
          }
          parent.addView(button, matchButton(0, 60)); parent.addView(space(12))
      }
@@ -907,7 +910,7 @@ diff --git a/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt b/comm
      private fun column() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(-1, -2) }
      private fun row() = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutParams = LinearLayout.LayoutParams(-1, -2) }
      private fun label(value: String, size: Int, color: Int, bold: Boolean = false) = TextView(this).apply {
-@@ -1192,7 +1242,7 @@
+@@ -1192,7 +1244,7 @@
      private fun button(title: String, primary: Boolean, click: () -> Unit) = Button(this).apply {
          text = title; isAllCaps = false; textSize = 18f; setTextColor(if (primary) BG else TEXT)
          typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
