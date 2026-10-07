@@ -378,11 +378,24 @@ index ddd49a7..479cd94 100644
              }.show()
      }
  
+diff --git a/common/src/main/java/com/shilapi/xcertplay/DiPlayBootstrap.kt b/common/src/main/java/com/shilapi/xcertplay/DiPlayBootstrap.kt
+index 003b254..e7b749e 100644
+--- a/common/src/main/java/com/shilapi/xcertplay/DiPlayBootstrap.kt
++++ b/common/src/main/java/com/shilapi/xcertplay/DiPlayBootstrap.kt
+@@ -55,7 +55,7 @@ internal object DiPlayPreferences {
+     fun savePhone(context: Context, address: String, name: String) {
+         prefs(context).edit().putString("phone_address", address).putString("phone_name", name).apply()
+     }
+-    fun autoConnect(context: Context) = prefs(context).getBoolean("auto_connect", false)
++    fun autoConnect(context: Context) = prefs(context).getBoolean("auto_connect", true)
+     fun saveAutoConnect(context: Context, value: Boolean) {
+         prefs(context).edit().putBoolean("auto_connect", value).apply()
+     }
 diff --git a/common/src/test/java/com/shilapi/xcertplay/HotspotModeMigrationTest.kt b/common/src/test/java/com/shilapi/xcertplay/HotspotModeMigrationTest.kt
-index 0a06313..39edaf5 100644
+index 0a06313..75a0297 100644
 --- a/common/src/test/java/com/shilapi/xcertplay/HotspotModeMigrationTest.kt
 +++ b/common/src/test/java/com/shilapi/xcertplay/HotspotModeMigrationTest.kt
-@@ -14,9 +14,9 @@ class HotspotModeMigrationTest {
+@@ -14,12 +14,21 @@ class HotspotModeMigrationTest {
          val prefs = app.getSharedPreferences("xcertplay_airplay", 0)
          app.getSharedPreferences("psa_lan", 0).edit().clear().commit()
          for (old in listOf("WIFI_P2P", "LOCAL_ONLY_HOTSPOT", "MANUAL", "unknown")) {
@@ -395,6 +408,18 @@ index 0a06313..39edaf5 100644
              assertNull(app.getSharedPreferences("psa_lan", 0).getString("ssid", null))
          }
      }
++    @Test fun automaticBootstrapDefaultsOnAndRespectsExplicitOptOut() {
++        val app=RuntimeEnvironment.getApplication()
++        val prefs=app.getSharedPreferences("diplay",0)
++        prefs.edit().clear().commit()
++        assertTrue(DiPlayPreferences.autoConnect(app))
++        DiPlayPreferences.saveAutoConnect(app,false)
++        assertFalse(DiPlayPreferences.autoConnect(app))
++        prefs.edit().clear().commit()
++    }
+     @Test fun usbSelectionIsPreserved() {
+         val app = RuntimeEnvironment.getApplication()
+         AirPlayPersistence.saveWirelessEnabled(app, false)
 diff --git a/common/src/test/java/com/shilapi/xcertplay/LanNetworkManagerTest.kt b/common/src/test/java/com/shilapi/xcertplay/LanNetworkManagerTest.kt
 index 5700631..cc224f3 100644
 --- a/common/src/test/java/com/shilapi/xcertplay/LanNetworkManagerTest.kt

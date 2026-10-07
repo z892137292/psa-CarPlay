@@ -15,6 +15,7 @@ AirPlay session callback. On failure or 30-second session timeout it closes
 the old controller, waits for awaitClosed, then requests wireless prerequisites
 and starts Wireless AP. A failed/slow teardown blocks any replacement.
 There is no concurrent transport handover or default LAN/P2P selection.
+App-open automatic connection defaults on; a previously explicit user opt-out remains respected. With no identifiable paired iPhone the controller waits without opening an AP or starting a CarPlay session. Initial Android permission/VPN/root prompts are still platform requirements.
 
 CarPlayController retains its USB bring-up implementation and its single
 AirPlay/media/touch implementation. Wireless identification and MFi run first
