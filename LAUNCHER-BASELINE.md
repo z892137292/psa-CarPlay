@@ -26,7 +26,7 @@ Current build environment has no local Android SDK, adb or KVM. CI's installed-A
 
 The homepage and connection shell keep the opaque real UI above the live TextureView until current-generation decoder first-render AND the current texture update. AirPlay setup/active alone cannot uncover it. Texture destruction resets display readiness; terminal events restore UI before asynchronous teardown. The real Bluetooth/USB/AirPlay start path remains present.
 
-Hotspot settings has its own homepage/loading button; Wi-Fi has a separate settings button. Settings attempts log `SETTINGS_INTENT requestedAction= resolvedPackage= resolvedActivity= success=`. For non-Activity callers, NEW_TASK is used. No sample-derived ROM package is hardcoded.
+Hotspot settings has its own homepage/loading button; Wi-Fi has a separate settings button. Settings attempts log `SETTINGS_INTENT requestedAction= resolvedPackage= resolvedActivity= success=`. NEW_TASK is always used for system settings, including Activity callers: an installed-APK test observed that opening WLAN in the PSA task caused the next Launcher-style NEW_TASK application open to retain WifiSettings on top. A separate settings task fixes that restoration path without clearing or finishing the CarPlay Host. The phone-page Bluetooth settings entry also uses NEW_TASK. No sample-derived ROM package is hardcoded.
 
 Manual system-hotspot is the existing default; RootSoftAP/LocalOnlyHotspot are not promoted and Wi-Fi Direct stays experimental. No automatic manual-to-LAN fallback is added. NETWORK_MODE_SOURCE records requested/resolved modes and fallbackMode=NONE. Configuration display is labelled configuredNetworkMode, not actual resolved transport.
 

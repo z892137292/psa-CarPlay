@@ -177,6 +177,15 @@
              } else "无线网络 · "+if(CarPlayBackgroundSession.frameReady) "已连接" else "等待连接"
              runOnUiThread { if(networkStatusView===label && label.text.toString()!=text) label.text=text;networkReadPending.set(false) }
          },"network-card-ui").start()
+@@ -263,7 +289,7 @@
+ 
+     private fun phones(content: LinearLayout) {
+         content.addView(CarPlayShell.label(this,"手机",36f))
+-        content.addView(CarPlayShell.button(this,"打开蓝牙设置") { runCatching { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }.onFailure { toast("系统蓝牙设置不可用") } },matchButton())
++        content.addView(CarPlayShell.button(this,"打开蓝牙设置") { runCatching { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }.onFailure { toast("系统蓝牙设置不可用") } },matchButton())
+         val list=CarPlayShell.column(this);content.addView(list)
+         list.addView(CarPlayShell.label(this,"正在读取已配对设备…",20f))
+         Thread({
 @@ -300,18 +326,34 @@
  
      private fun diagnostics(content: LinearLayout) {
@@ -213,6 +222,15 @@
              toggle(card,"打开应用后自动连接","主页显示后在后台连接手机",DiPlayPreferences.autoConnect(this)) { DiPlayPreferences.saveAutoConnect(this,it) }
              card.addView(CarPlayShell.button(this,"首选连接方式") { page="connection";render() },matchButton(12,60))
          }
+@@ -558,7 +600,7 @@
+         section(content, getString(R.string.permissions_and_connection_help), R.drawable.ic_dp_permissions) { card ->
+             card.addView(label(getString(R.string.nearby_devices_connects_your_iphone_microphone_enables_sir), 16, MUTED))
+             card.addView(button(getString(R.string.app_permissions), false) { openSystem(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) }, matchButton(16, 60))
+-            card.addView(button(getString(R.string.bluetooth_settings), false) { openSystem(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }, matchButton(10, 60))
++            card.addView(button(getString(R.string.bluetooth_settings), false) { openSystem(Intent(Settings.ACTION_BLUETOOTH_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }, matchButton(10, 60))
+             card.addView(button(getString(R.string.wireless_connection_help), false) { wirelessHelp() }, matchButton(10, 60))
+         }
+         section(content, getString(R.string.about), R.drawable.ic_dp_about) { card ->
 @@ -620,7 +662,7 @@
              parent.addView(CarPlayShell.button(this,"自动创建专用热点（高级，需权限）") { AirPlayPersistence.saveWirelessHotspotMode(this,WirelessHotspotMode.WIRELESS_AP);render() },matchButton(12,60))
          }
@@ -244,6 +262,32 @@
                  val secret = password.text.toString()
                  val problem = hotspotError(name, secret)
                  if (problem != null) error.text = problem
+@@ -946,14 +988,14 @@
+         if (adapter == null || !adapter.isEnabled) {
+             AlertDialog.Builder(this).setTitle(getString(R.string.turn_on_bluetooth))
+                 .setMessage(getString(R.string.enable_the_car_s_bluetooth_and_pair_your_iphone_first))
+-                .setPositiveButton(getString(R.string.open_bluetooth)) { _, _ -> openSystem(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
++                .setPositiveButton(getString(R.string.open_bluetooth)) { _, _ -> openSystem(Intent(Settings.ACTION_BLUETOOTH_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                 .setNegativeButton(getString(R.string.later), null).show(); return
+         }
+         val devices = runCatching { adapter.bondedDevices.sortedBy { it.name ?: "" } }.getOrDefault(emptyList())
+         if (devices.isEmpty()) {
+             AlertDialog.Builder(this).setTitle(getString(R.string.pair_your_iphone))
+                 .setMessage(getString(R.string.on_your_iphone_open_settings_bluetooth_and_pair_with_the_c))
+-                .setPositiveButton(getString(R.string.open_bluetooth)) { _, _ -> openSystem(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
++                .setPositiveButton(getString(R.string.open_bluetooth)) { _, _ -> openSystem(Intent(Settings.ACTION_BLUETOOTH_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                 .setNegativeButton(getString(R.string.got_it), null).show(); return
+         }
+         AlertDialog.Builder(this).setTitle(getString(R.string.choose_your_iphone))
+@@ -966,7 +1008,7 @@
+                 val start = pendingWireless; pendingWireless = false
+                 render()
+                 if (start) connect(true)
+-            }.setNeutralButton(getString(R.string.pair_another)) { _, _ -> openSystem(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
++            }.setNeutralButton(getString(R.string.pair_another)) { _, _ -> openSystem(Intent(Settings.ACTION_BLUETOOTH_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+             .setNegativeButton(getString(R.string.cancel)) { _, _ -> pendingWireless = false }.show()
+     }
+ 
 --- a/common/src/main/java/com/shilapi/xcertplay/DiagnosticRedactor.kt
 +++ b/common/src/main/java/com/shilapi/xcertplay/DiagnosticRedactor.kt
 @@ -13,6 +13,8 @@
@@ -270,7 +314,7 @@
 +    fun hotspot(context: Context) = open(context, listOf("android.settings.TETHER_SETTINGS", "android.settings.WIFI_AP_SETTINGS", Settings.ACTION_WIRELESS_SETTINGS, Settings.ACTION_SETTINGS))
 +    private fun open(context: Context, actions: List<String>) {
 +        for (action in actions) {
-+            val intent = Intent(action).apply { if (context !is android.app.Activity) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
++            val intent = Intent(action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 +            val resolved = intent.resolveActivity(context.packageManager)
 +            val success = runCatching { context.startActivity(intent); true }.getOrDefault(false)
 +            Log.i("PSA", "SETTINGS_INTENT requestedAction=$action resolvedPackage=${resolved?.packageName} resolvedActivity=${resolved?.className} success=$success")
@@ -380,7 +424,7 @@
 +}
 --- /dev/null
 +++ b/common/src/test/java/com/shilapi/xcertplay/NetworkSettingsLauncherTest.kt
-@@ -0,0 +1,35 @@
+@@ -0,0 +1,43 @@
 +package com.shilapi.xcertplay
 +
 +import android.content.ContextWrapper
@@ -406,6 +450,14 @@
 +        val target=Destination();NetworkSettingsLauncher.wifi(target)
 +        assertEquals(listOf(Settings.ACTION_WIFI_SETTINGS),target.attempts.map { it.action })
 +        assertTrue(target.attempts.single().flags and Intent.FLAG_ACTIVITY_NEW_TASK != 0)
++    }
++    @Test fun activityCallerDoesNotPutRomSettingsAbovePsaInTheSameTask() {
++        val activity=org.robolectric.Robolectric.buildActivity(android.app.Activity::class.java).setup().get()
++        NetworkSettingsLauncher.wifi(activity)
++        val intent=org.robolectric.Shadows.shadowOf(activity).nextStartedActivity
++        assertEquals(Settings.ACTION_WIFI_SETTINGS,intent.action)
++        assertTrue(intent.flags and Intent.FLAG_ACTIVITY_NEW_TASK != 0)
++        activity.finish()
 +    }
 +    @Test fun hotspotUsesItsOwnDestinationBeforeNetworkSettings() {
 +        val target=Destination(setOf("android.settings.TETHER_SETTINGS"));NetworkSettingsLauncher.hotspot(target)
