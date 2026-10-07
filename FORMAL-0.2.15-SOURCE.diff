@@ -415,6 +415,33 @@ index eb3a200..cbc8dc6 100644
      private fun stream(generation: Int, active: Boolean) {
          method("onScreenStreamStateChanged", Int::class.javaPrimitiveType!!,
              Int::class.javaPrimitiveType!!, Boolean::class.javaPrimitiveType!!)
+diff --git a/common/src/test/java/com/shilapi/xcertplay/DiLink51ClusterLayoutTest.kt b/common/src/test/java/com/shilapi/xcertplay/DiLink51ClusterLayoutTest.kt
+index 959c4cf..5707a07 100644
+--- a/common/src/test/java/com/shilapi/xcertplay/DiLink51ClusterLayoutTest.kt
++++ b/common/src/test/java/com/shilapi/xcertplay/DiLink51ClusterLayoutTest.kt
+@@ -9,16 +9,17 @@ class DiLink51ClusterLayoutTest {
+     private val names = listOf(DiLink51ClusterLayout.BASE, DiLink51ClusterLayout.FULL, DiLink51ClusterLayout.SIDE)
+     private val firmware = DiLink51ClusterLayout.FINGERPRINT
+ 
+-    @Test fun mapUsesFullLayerWhileBothOtherThemesUseSideLayer() {
+-        assertEquals(DiLink51ClusterLayout.FULL, DiLink51ClusterLayout.displayName(names, firmware, Theme.MAP))
++    @Test fun psaDoesNotActivateTheBydFirmwareProfile() {
++        assertFalse(DiLink51ClusterLayout.supported(firmware))
++        assertEquals(DiLink51ClusterLayout.BASE, DiLink51ClusterLayout.displayName(names, firmware, Theme.MAP))
+         for (theme in listOf(Theme.SCENARIO, Theme.SIMPLE)) {
+-            assertEquals(DiLink51ClusterLayout.SIDE, DiLink51ClusterLayout.displayName(names, firmware, theme))
++            assertEquals(DiLink51ClusterLayout.BASE, DiLink51ClusterLayout.displayName(names, firmware, theme))
+             assertEquals(Plan(1320, 0, 600, 720, false), DiLink51ClusterLayout.plan(1920, 720, theme))
+         }
+     }
+ 
+-    @Test fun missingSideLayerCannotCoverScenarioWithAFullMap() {
+-        assertNull(DiLink51ClusterLayout.displayName(listOf(DiLink51ClusterLayout.BASE, DiLink51ClusterLayout.FULL), firmware, Theme.SCENARIO))
++    @Test fun disabledFirmwareRetainsTheGenericLayerSelection() {
++        assertEquals(DiLink51ClusterLayout.BASE, DiLink51ClusterLayout.displayName(listOf(DiLink51ClusterLayout.BASE, DiLink51ClusterLayout.FULL), firmware, Theme.SCENARIO))
+     }
+ 
+     @Test fun fullMapKeepsSpeedAndGearBandsOutsideTheVideoViewport() {
 diff --git a/common/src/test/java/com/shilapi/xcertplay/SystemHotspotManagerTest.kt b/common/src/test/java/com/shilapi/xcertplay/ManualHotspotManagerTest.kt
 similarity index 85%
 rename from common/src/test/java/com/shilapi/xcertplay/SystemHotspotManagerTest.kt
@@ -461,12 +488,91 @@ index eb9a64d..3cdde14 100644
          state=state.copy(enabled=false)
          try {manager.validateReady();fail()} catch(e:LanConnectionException){assertTrue(e.message!!.contains("INTERFACE_CHANGED"))}
      }
+diff --git a/common/src/test/java/com/shilapi/xcertplay/MapEmbedServiceTest.kt b/common/src/test/java/com/shilapi/xcertplay/MapEmbedServiceTest.kt
+index e12fdff..cdf984d 100644
+--- a/common/src/test/java/com/shilapi/xcertplay/MapEmbedServiceTest.kt
++++ b/common/src/test/java/com/shilapi/xcertplay/MapEmbedServiceTest.kt
+@@ -38,53 +38,33 @@ class MapEmbedSurfaceControlHostShadow {
+ @Config(sdk = [33], shadows = [MapEmbedSurfaceControlHostShadow::class])
+ @LooperMode(LooperMode.Mode.PAUSED)
+ class MapEmbedServiceTest {
+-    @Test fun disablingSharingReleasesAlreadyAttachedMaps() {
++    @Test fun psaSingleDisplayRefusesStaleLauncherSharingPreferences() {
+         MapEmbedSurfaceControlHostShadow.releases = 0
++        MapEmbedSurfaceControlHostShadow.lastView = null
+         val controller = Robolectric.buildService(MapEmbedService::class.java).create()
+         val service = controller.get()
+         try {
+-            AirPlayPersistence.saveLauncherMapSharing(service, true)
+             val replies = mutableListOf<Message>()
+             val client = Messenger(Handler(Looper.getMainLooper()) { replies += Message.obtain(it); true })
+             val endpoint = Messenger(service.onBind(Intent(MapEmbedService.ACTION)))
+-            endpoint.send(Message.obtain(null, MapEmbedService.MSG_ATTACH).apply {
+-                replyTo = client
+-                data = Bundle().apply {
+-                    putBinder(MapEmbedService.KEY_HOST_TOKEN, Binder())
+-                    putInt(MapEmbedService.KEY_DISPLAY_ID, Display.DEFAULT_DISPLAY)
+-                    putInt(MapEmbedService.KEY_WIDTH, 1200)
+-                    putInt(MapEmbedService.KEY_HEIGHT, 450)
+-                }
+-            })
+-            shadowOf(Looper.getMainLooper()).idle()
+-            val embeds = service.javaClass.getDeclaredField("embeds").apply { isAccessible = true }
+-                .get(service) as Map<*, *>
+-            assertEquals("Control: a launcher map was attached", 1, embeds.size)
+-            val root = MapEmbedSurfaceControlHostShadow.lastView as android.widget.FrameLayout
+-            val video = root.getChildAt(0) as android.view.TextureView
+-            video.surfaceTextureListener!!.onSurfaceTextureAvailable(android.graphics.SurfaceTexture(0), 1200, 450)
+-            assertTrue(MapMirrors.launcherShowsMap)
+-            AirPlayPersistence.saveLauncherMapSharing(service, false)
+-            shadowOf(Looper.getMainLooper()).idle()
+-            assertTrue("Turning sharing off must release existing launcher maps", embeds.isEmpty())
+-            assertFalse(MapMirrors.launcherShowsMap)
+-            assertEquals(1, MapEmbedSurfaceControlHostShadow.releases)
+-            assertEquals(MapEmbedService.ERROR_DISABLED,
+-                replies.last { it.what == MapEmbedService.MSG_ERROR }.data.getString(MapEmbedService.KEY_ERROR))
+-            // A delayed surface callback from the revoked view cannot re-register a mirror.
+-            video.surfaceTextureListener!!.onSurfaceTextureAvailable(android.graphics.SurfaceTexture(0), 1200, 450)
+-            assertFalse(MapMirrors.launcherShowsMap)
+-            // Fresh requests stay refused while consent is off.
+-            endpoint.send(Message.obtain(null, MapEmbedService.MSG_ATTACH).apply { replyTo = client })
+-            shadowOf(Looper.getMainLooper()).idle()
+-            assertTrue(embeds.isEmpty())
+-            assertEquals(MapEmbedService.ERROR_DISABLED, replies.last().data.getString(MapEmbedService.KEY_ERROR))
+-            // Re-enabling does not silently reconnect the old view.
+-            AirPlayPersistence.saveLauncherMapSharing(service, true)
+-            shadowOf(Looper.getMainLooper()).idle()
+-            assertTrue(embeds.isEmpty())
+-        } finally {
+-            controller.destroy()
+-        }
++            for (staleSetting in listOf(true, false, true)) {
++                AirPlayPersistence.saveLauncherMapSharing(service, staleSetting)
++                assertFalse(AirPlayPersistence.loadLauncherMapSharing(service))
++                endpoint.send(Message.obtain(null, MapEmbedService.MSG_ATTACH).apply {
++                    replyTo = client
++                    data = Bundle().apply {
++                        putBinder(MapEmbedService.KEY_HOST_TOKEN, Binder())
++                        putInt(MapEmbedService.KEY_DISPLAY_ID, Display.DEFAULT_DISPLAY)
++                        putInt(MapEmbedService.KEY_WIDTH, 1200)
++                        putInt(MapEmbedService.KEY_HEIGHT, 450)
++                    }
++                })
++                shadowOf(Looper.getMainLooper()).idle()
++                assertEquals(MapEmbedService.ERROR_DISABLED, replies.last().data.getString(MapEmbedService.KEY_ERROR))
++                val embeds = service.javaClass.getDeclaredField("embeds").apply { isAccessible = true }.get(service) as Map<*, *>
++                assertTrue(embeds.isEmpty())
++                assertNull(MapEmbedSurfaceControlHostShadow.lastView)
++            }
++        } finally { controller.destroy() }
+     }
+ }
 diff --git a/common/src/test/java/com/shilapi/xcertplay/PsaWideHomeTest.kt b/common/src/test/java/com/shilapi/xcertplay/PsaWideHomeTest.kt
 new file mode 100644
-index 0000000..55cf578
+index 0000000..e8175b5
 --- /dev/null
 +++ b/common/src/test/java/com/shilapi/xcertplay/PsaWideHomeTest.kt
-@@ -0,0 +1,35 @@
+@@ -0,0 +1,38 @@
 +package com.shilapi.xcertplay
 +
 +import android.view.View
@@ -494,8 +600,11 @@ index 0000000..55cf578
 +        root.layout(0, 0, 1920, 720)
 +        fun descendants(v: View): List<View> = listOf(v) + if (v is ViewGroup) (0 until v.childCount).flatMap { descendants(v.getChildAt(it)) } else emptyList()
 +        val all = descendants(root)
-+        listOf("连接手机", "蓝牙设备列表", "Wi-Fi 设置", "系统热点设置", "连接配置", "连接诊断 / USB").forEach { title ->
-+            val control = all.filterIsInstance<TextView>().single { it.text.toString() == title }
++        listOf(activity.getString(com.shilapi.xcertplay.host.R.string.connect_phone), "蓝牙设备列表", "Wi-Fi 设置", "系统热点设置", "连接配置", "连接诊断 / USB").forEach { title ->
++            val controls = all.filterIsInstance<TextView>()
++            val control = controls.singleOrNull { it.text.toString() == title }
++            assertNotNull("Missing $title; visible labels=${controls.map { it.text }}", control)
++            control!!
 +            val rect = android.graphics.Rect()
 +            assertTrue(title, control.getGlobalVisibleRect(rect))
 +            assertTrue("$title clipped: $rect", rect.width() >= control.width && rect.height() >= control.height)
@@ -504,7 +613,7 @@ index 0000000..55cf578
 +}
 diff --git a/common/src/test/java/com/shilapi/xcertplay/UsbNcmClosedTunTest.kt b/common/src/test/java/com/shilapi/xcertplay/UsbNcmClosedTunTest.kt
 new file mode 100644
-index 0000000..b715877
+index 0000000..327756f
 --- /dev/null
 +++ b/common/src/test/java/com/shilapi/xcertplay/UsbNcmClosedTunTest.kt
 @@ -0,0 +1,57 @@
@@ -532,11 +641,11 @@ index 0000000..b715877
 +    @Test fun outboundClosedTunAfterStopDoesNotReportAnotherFailure() = closedTun("runTunToNcm", false)
 +
 +    private fun closedTun(worker: String, running: Boolean) {
-+        val pipe = ParcelFileDescriptor.createPipe()
-+        val tun = pipe[0]
++        // Robolectric's descriptor getter does not enforce Android's closed state.
++        // Inject the descriptor acquisition failure itself to test both worker boundaries.
++        val tun = mock(ParcelFileDescriptor::class.java)
++        `when`(tun.fileDescriptor).thenThrow(IllegalStateException("TUN descriptor already closed"))
 +        try {
-+            tun.close()
-+            // This is a real closed Android descriptor, not a mocked constructor failure.
 +            assertTrue(runCatching { tun.fileDescriptor }.exceptionOrNull() is IllegalStateException)
 +            val ncm = mock(NcmUsbBridge::class.java)
 +            val errors = mutableListOf<Throwable>()
@@ -561,7 +670,7 @@ index 0000000..b715877
 +            }
 +            verifyNoInteractions(ncm)
 +        } finally {
-+            pipe[1].close()
++            verify(tun, atLeastOnce()).fileDescriptor
 +        }
 +    }
 +}
@@ -745,3 +854,28 @@ index c9e932e..dcaad50 100644
          else com.shilapi.xcertplay.network.ExistingWifiManager(appContext,
              settings.getString("ssid", "").orEmpty(), settings.getString("password", "").orEmpty(),
              ::debugLog, { if (!isStaleWirelessRun(generation)) fail(com.shilapi.xcertplay.network.LanConnectionException(
+diff --git a/shared/src/test/java/com/shilapi/xcertplay/hud/BydClusterMapPauseTest.kt b/shared/src/test/java/com/shilapi/xcertplay/hud/BydClusterMapPauseTest.kt
+index 5e8f298..d22b53c 100644
+--- a/shared/src/test/java/com/shilapi/xcertplay/hud/BydClusterMapPauseTest.kt
++++ b/shared/src/test/java/com/shilapi/xcertplay/hud/BydClusterMapPauseTest.kt
+@@ -25,7 +25,7 @@ class BydClusterMapPauseTest {
+     }
+ 
+     @Test
+-    fun initializationDoesNotWaitForAPendingAdbRead() {
++    fun disabledPsaProfileDoesNotReadAdbOrBlockInitialization() {
+         val reading = CountDownLatch(1)
+         // An adbd that accepted the read and has not answered yet.
+         BydClusterMapPause.readMode = {
+@@ -37,7 +37,10 @@ class BydClusterMapPauseTest {
+         BydClusterMapPause.clusterMapShown = true
+         BydClusterMapPause.streamControl = {}
+         BydClusterMapPause.initialize(context)
+-        assertTrue("the ticker should start reading", reading.await(5, TimeUnit.SECONDS))
++        // PSA deliberately disables the vendor switch, including saved enable flags.
++        org.junit.Assert.assertFalse(BydOutputSettings.clusterStreamPause(context))
++        BydClusterMapPause::class.java.getDeclaredMethod("tick").apply { isAccessible = true }.invoke(BydClusterMapPause)
++        org.junit.Assert.assertEquals(1L, reading.count)
+ 
+         val initialized = CountDownLatch(1)
+         thread { BydClusterMapPause.initialize(context); initialized.countDown() }
