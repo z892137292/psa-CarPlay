@@ -13,7 +13,10 @@ def launch(page='home',host=False,cold=False):
  time.sleep(.7)
 def dump():
  for attempt in range(4):
-  adb('shell','uiautomator','dump','/sdcard/psa-ui.xml')
+  adb('shell','rm','-f','/sdcard/psa-ui.xml')
+  result=adb('shell','uiautomator','dump','/sdcard/psa-ui.xml')
+  if 'dumped to:' not in result:
+   print('UI dump not current: '+result);time.sleep(.5);continue
   xml=adb('shell','cat','/sdcard/psa-ui.xml')
   if xml.startswith('<?xml'):return E.fromstring(xml)
   time.sleep(.5)

@@ -709,7 +709,7 @@ diff --git a/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt b/comm
 +                    else "车机热点 · "+(live.actualFrequency?.let { if(it>=5000) "5 GHz" else "2.4 GHz" } ?: "频段待确认")+" · "+if(CarPlayBackgroundSession.snapshot()?.controller?.currentAirPlaySession()!=null) "iPhone 已连接" else "等待 iPhone"
 +                }.getOrDefault("热点状态不可读，请查看连接页")
 +            } else "无线网络 · "+if(CarPlayBackgroundSession.frameReady) "已连接" else "等待连接"
-+            runOnUiThread { if(networkStatusView===label) label.text=text;networkReadPending.set(false) }
++            runOnUiThread { if(networkStatusView===label && label.text.toString()!=text) label.text=text;networkReadPending.set(false) }
 +        },"network-card-ui").start()
 +    }
 +
@@ -882,7 +882,12 @@ diff --git a/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt b/comm
      }
      private fun showLiveNetwork(hotspot: Boolean) {
          Thread {
-@@ -943,13 +994,14 @@
+@@ -939,17 +990,19 @@
+ 
+     private fun refreshStatus() {
+         val running = CarPlayBackgroundSession.hasSession()
+-        status?.text = when {
++        val statusText = when {
              CarPlayBackgroundSession.startBlocked() -> "等待重连 · 正在清理旧会话"
              com.shilapi.xcertplay.orchestration.PsaConnectionState.current() == "等待重连" -> "等待连接"
              setupError != null -> getString(R.string.setup_needs_attention)
@@ -895,13 +900,14 @@ diff --git a/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt b/comm
          }
 -        if (lastRunning != running) {
 -            connectButton?.text = if (running) getString(R.string.open_carplay) else getString(R.string.connect_phone)
++        status?.let { if(it.text.toString()!=statusText) it.text=statusText }
 +        val connectTitle=if (running) { if(CarPlayBackgroundSession.frameReady) "进入 CarPlay" else "查看连接进度" } else "连接手机"
 +        if (lastRunning != running || connectButton?.text?.toString()!=connectTitle) {
 +            connectButton?.text = connectTitle
              disconnectButton?.visibility = if (running) View.VISIBLE else View.GONE
              disconnectButton?.isEnabled = true
              lastRunning = running
-@@ -1181,7 +1233,7 @@
+@@ -1181,7 +1234,7 @@
          }
          parent.addView(button, matchButton(0, 60)); parent.addView(space(12))
      }
@@ -910,7 +916,7 @@ diff --git a/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt b/comm
      private fun column() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(-1, -2) }
      private fun row() = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutParams = LinearLayout.LayoutParams(-1, -2) }
      private fun label(value: String, size: Int, color: Int, bold: Boolean = false) = TextView(this).apply {
-@@ -1192,7 +1244,7 @@
+@@ -1192,7 +1245,7 @@
      private fun button(title: String, primary: Boolean, click: () -> Unit) = Button(this).apply {
          text = title; isAllCaps = false; textSize = 18f; setTextColor(if (primary) BG else TEXT)
          typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
