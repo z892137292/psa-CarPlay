@@ -1522,10 +1522,10 @@ index 5700631..62bfabf 100644
      private fun caps(vararg transports: Int) = mock(NetworkCapabilities::class.java).also {
 diff --git a/common/src/test/java/com/shilapi/xcertplay/NetworkIdentityResolverTest.kt b/common/src/test/java/com/shilapi/xcertplay/NetworkIdentityResolverTest.kt
 new file mode 100644
-index 0000000..43ee80e
+index 0000000..0a5a6fc
 --- /dev/null
 +++ b/common/src/test/java/com/shilapi/xcertplay/NetworkIdentityResolverTest.kt
-@@ -0,0 +1,18 @@
+@@ -0,0 +1,23 @@
 +package com.shilapi.xcertplay
 +
 +import com.shilapi.xcertplay.network.NetworkIdentityResolver
@@ -1537,6 +1537,11 @@ index 0000000..43ee80e
 +        listOf(null,""," ","<unknown ssid>","UNKNOWN","null","0x","\"<unknown ssid>\"").forEach {
 +            assertNull(NetworkIdentityResolver.normalizeSsid(it))
 +        }
++    }
++    @Test fun knownApEvidenceOverridesWifiTransportAndNamesAreNotEvidence() {
++        assertEquals(com.shilapi.xcertplay.network.NetworkInterfaceRole.AP,com.shilapi.xcertplay.network.classifyNetworkInterface(true,false,true))
++        assertEquals(com.shilapi.xcertplay.network.NetworkInterfaceRole.STA,com.shilapi.xcertplay.network.classifyNetworkInterface(true,false,false))
++        assertEquals(com.shilapi.xcertplay.network.NetworkInterfaceRole.UNKNOWN,com.shilapi.xcertplay.network.classifyNetworkInterface(false,false,false))
 +    }
 +    @Test fun removesOnlyOuterQuotes() {
 +        assertEquals("Home WiFi",NetworkIdentityResolver.normalizeSsid("\"Home WiFi\""))
@@ -2874,7 +2879,7 @@ index 597b4c6..ab68b7b 100644
          } catch (error: IOException) {
              if (active.get()) {
 diff --git a/shared/src/main/java/com/shilapi/xcertplay/network/ExistingSystemAp.kt b/shared/src/main/java/com/shilapi/xcertplay/network/ExistingSystemAp.kt
-index 0e10b7a..f833b46 100644
+index 0e10b7a..8fa61e8 100644
 --- a/shared/src/main/java/com/shilapi/xcertplay/network/ExistingSystemAp.kt
 +++ b/shared/src/main/java/com/shilapi/xcertplay/network/ExistingSystemAp.kt
 @@ -27,7 +27,7 @@ class ExistingSystemAp(context: Context) {
@@ -2886,9 +2891,12 @@ index 0e10b7a..f833b46 100644
          val password = text(legacy?.preSharedKey ?: cfg?.let { invoke(it, "getPassphrase") })
          val open = legacy?.let { it.allowedKeyManagement.get(WifiConfiguration.KeyMgmt.NONE) }
              ?: (cfg?.let { invoke(it, "getSecurityType") } as? Number)?.let { it.toInt() == 0 }
-@@ -48,7 +48,7 @@ class ExistingSystemAp(context: Context) {
+@@ -46,9 +46,9 @@ class ExistingSystemAp(context: Context) {
+         val stations = cm?.allNetworks.orEmpty().mapNotNull { cm?.getLinkProperties(it)?.interfaceName }.toSet()
+         val tethered = (cm?.let { invoke(it, "getTetheredIfaces") } as? Array<*>)?.filterIsInstance<String>().orEmpty().toSet()
          val links = NetworkInterface.getNetworkInterfaces().toList().filter { iface ->
-             iface.isUp && !iface.isLoopback && iface.name !in stations &&
+-            iface.isUp && !iface.isLoopback && iface.name !in stations &&
++            iface.isUp && !iface.isLoopback && (iface.name !in stations || iface.name in tethered) &&
                  !iface.name.startsWith("p2p", true) &&
 -                (iface.name in tethered || iface.name.matches(Regex("(?i)(wlan|ap|swlan|wifi)[0-9]+|.*softap.*")))
 +                (iface.name in tethered || (enabled != false && interfaceHint.isNotBlank() && iface.name == interfaceHint))
@@ -4457,7 +4465,7 @@ index bae072e..f4dee2c 100644
      val locationReportingEnabled: Boolean = false,
 diff --git a/shared/src/main/java/com/shilapi/xcertplay/orchestration/ExistingLanSuccessEvidence.kt b/shared/src/main/java/com/shilapi/xcertplay/orchestration/ExistingLanSuccessEvidence.kt
 new file mode 100644
-index 0000000..0c6a672
+index 0000000..9de4f19
 --- /dev/null
 +++ b/shared/src/main/java/com/shilapi/xcertplay/orchestration/ExistingLanSuccessEvidence.kt
 @@ -0,0 +1,17 @@
@@ -4471,7 +4479,7 @@ index 0000000..0c6a672
 +    @Synchronized fun begin(generation: Int) { this.generation=generation;stages.clear();reported=false }
 +    @Synchronized fun mark(generation: Int,stage: String) {
 +        if(this.generation!=generation) return
-+        stages.add(stage)
++        if(!stages.add(stage)) return
 +        report("EXISTING_LAN_PROGRESS generationId=$generation stage=$stage success=false")
 +        if(!reported && stages.containsAll(REQUIRED)) { reported=true;report("EXISTING_LAN_SUCCESS generationId=$generation stages=${REQUIRED.joinToString(",")} success=true") }
 +    }
@@ -4710,10 +4718,10 @@ index 0000000..9ff9d18
 +}
 diff --git a/shared/src/test/java/com/shilapi/xcertplay/orchestration/ExistingLanSuccessEvidenceTest.kt b/shared/src/test/java/com/shilapi/xcertplay/orchestration/ExistingLanSuccessEvidenceTest.kt
 new file mode 100644
-index 0000000..ce01a41
+index 0000000..3fa4b65
 --- /dev/null
 +++ b/shared/src/test/java/com/shilapi/xcertplay/orchestration/ExistingLanSuccessEvidenceTest.kt
-@@ -0,0 +1,25 @@
+@@ -0,0 +1,28 @@
 +package com.shilapi.xcertplay.orchestration
 +
 +import org.junit.Assert.*
@@ -4728,6 +4736,9 @@ index 0000000..ce01a41
 +            assertFalse("Missing $missing",logs.any { it.startsWith("EXISTING_LAN_SUCCESS") })
 +            proof.mark(1,missing)
 +            assertEquals(1,logs.count { it.startsWith("EXISTING_LAN_SUCCESS") })
++            val completedLogCount=logs.size
++            ExistingLanSuccessEvidence.REQUIRED.forEach { proof.mark(1,it) }
++            assertEquals(completedLogCount,logs.size)
 +        }
 +    }
 +    @Test fun rejectsStaleGenerationAndTerminalCallbacks() {
