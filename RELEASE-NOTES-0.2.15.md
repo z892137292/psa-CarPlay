@@ -1,0 +1,13 @@
+# PSA CarPlay 0.2.15 — formal architecture, hardware candidate
+
+Restores the latest PSA 0.2.12 UI-regression branch rather than reverting to main's 0.2.8. Reconstructs from pinned DiPlay v0.2.10 (3e43e25), applies a single complete formal patch. DiPlay 0.2.13 (6fb0fa4) and 0.2.14 are comparison baselines, not silently substituted for the PSA project. Their broader media/rotation/BYD changes are not imported. The reviewed 0.2.13 closed-TUN USB error-boundary fix and regression test are carried forward.
+
+Runtime routes: USB (USBMUX/NCM/VPN/iAP2) or wireless (Bluetooth bootstrap/local MFi/PHONE_BOUND, existing system hotspot via ManualHotspotManager, or ExistingWifiManager). Never creates, stops or retries P2P/SoftAP. Current system hotspot configuration wins over explicitly confirmed manual input. Unknown ROM-hidden credentials remain unknown and require confirmation, never claimed to be automatically detected.
+
+Removes abandoned reconstruction patches from the current tree and P2P manifest feature/settings resources. Git history and rollback tag preserve their bytes. Retains working offline MFi despite its experimental label, USB, AirPlay/type-130/H.264/AAC/touch, connection diagnostics and the close gate. Existing Wi-Fi uses live/cached verified AP identity and Android 31+ location-inclusive callbacks while retaining the Android 8/9 constructor path.
+
+1920x720 proportional three-column home: connection, actual paired Bluetooth picker, three formal modes, Wi-Fi/system hotspot configuration and diagnostics. Settings pages remain scrollable. Waiting panel remains visible until the main decoder actually submits its first rendered frame; stream setup, cluster frames and stale generation callbacks cannot remove it. Stream termination restores the panel. Disconnect returns home before background teardown; close gate blocks overlapping controllers.
+
+Build evidence is produced by Actions: full shared/common/home unit suites, mobile/home/maphost lint and APKs; APK identity/signature/SHA256 and reports. The installable package is a debug-signed hardware candidate (com.psa.carplay.dev), not an established production-signature upgrade. Compilation and simulated layout assertions do not establish physical-car compatibility.
+
+Pending hardware: 1920x720 real display/touch, PSA ROM Wi-Fi/hotspot intent destinations, real paired devices and permissions, live hotspot fields/ROM-hidden fallback, Existing LAN SSID/BSSID, USB/VPN/NCM stream, FIRST_FRAME/failed-connect panel, manual hotspot regression, disconnect/rapid reconnect and logs matching actual playback. No P2P test required or available.

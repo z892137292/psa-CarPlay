@@ -1,0 +1,676 @@
+diff --git a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt b/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
+index f91a557..1769492 100644
+--- a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
++++ b/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
+@@ -336,6 +336,7 @@ class CarPlayHostActivity : ComponentActivity() {
+     private var handshakeResetInProgress = false
+     private var startAfterHandshakeReset = false
+     private var restartGeneration = 0
++    private var mainFirstFrameReady = false
+     private var reconnectScheduled = false
+     private var sessionLog: SessionLogFile? = null
+     private var psaDiagnostics: PsaDisconnectDiagnostics? = null
+@@ -2863,6 +2864,7 @@ class CarPlayHostActivity : ComponentActivity() {
+             onScreenStreamActiveChanged = { type, active ->
+                 onScreenStreamStateChanged(controllerGeneration, type, active)
+             },
++            onFirstFrameRendered = { type -> onFirstFrameRendered(controllerGeneration, type) },
+             mediaBufferMillis = AirPlayPersistence.loadMediaBufferMillis(this),
+             onAudioDiagnostic = { message ->
+                 if (message.startsWith("Microphone: ")) {
+@@ -2935,6 +2937,7 @@ class CarPlayHostActivity : ComponentActivity() {
+                         return@runOnUiThread
+                     }
+                     activeScreenStreamTypes.clear()
++                    mainFirstFrameReady = false
+                     setConnectionStage(getString(R.string.carplay_session_ended_reconnecting))
+                     appendLog("AirPlay session ended; reconnecting from scratch")
+                     reconnectAfterLoss("AirPlay session ended")
+@@ -2952,6 +2955,7 @@ class CarPlayHostActivity : ComponentActivity() {
+                         return@runOnUiThread
+                     }
+                     activeScreenStreamTypes.clear()
++                    mainFirstFrameReady = false
+                     setConnectionStage(getString(R.string.transport_error_reconnecting))
+                     appendLog("CarPlay transport error: $message; reconnecting from scratch")
+                     reconnectAfterLoss("CarPlay transport error: $message")
+@@ -3032,6 +3036,7 @@ class CarPlayHostActivity : ComponentActivity() {
+         snapshot.sink.setScreenStreamActiveChangedListener { type, active ->
+             onScreenStreamStateChanged(restartGeneration, type, active)
+         }
++        snapshot.sink.setFirstFrameRenderedListener { type -> onFirstFrameRendered(generation, type) }
+         currentSurface?.let(::attachSurface)
+         val serviceReused = snapshot.controller.hasActiveAirPlayAttachment()
+         appendLog(
+@@ -3292,6 +3297,7 @@ class CarPlayHostActivity : ComponentActivity() {
+     private fun returnHomeAfterConfirmedLoss(reason: String, eventNanos: Long) {
+         activeAirPlaySession = null
+         activeScreenStreamTypes.clear()
++                    mainFirstFrameReady = false
+         CarPlayBackgroundSession.active = false
+         PsaConnectionState.set("连接", "等待重连")
+         appendFileLog("CONNECTION_STATE state=DISCONNECTED reason=$reason eventNanos=$eventNanos")
+@@ -3356,6 +3362,7 @@ class CarPlayHostActivity : ComponentActivity() {
+         val size = activeDisplaySize ?: return
+         appendLog(reason)
+         activeScreenStreamTypes.clear()
++                    mainFirstFrameReady = false
+         setConnectionStage(reason)
+         Log.i(TAG, "$reason; rebuilding stack at ${size.width}x${size.height}")
+         val generation = ++restartGeneration
+@@ -3585,10 +3592,23 @@ class CarPlayHostActivity : ComponentActivity() {
+         return total / event.pointerCount
+     }
+ 
++    private fun onFirstFrameRendered(generation: Int, type: Int) {
++        runOnUiThread {
++            if (shuttingDown.get() || generation != restartGeneration || type != SCREEN_TYPE_MAIN) return@runOnUiThread
++            mainFirstFrameReady = true
++            PsaConnectionState.set("视频", "FIRST_FRAME：已输出首帧")
++            appendLog("FIRST_FRAME generation=$generation type=$type")
++            updateDebugOverlays()
++        }
++    }
++
+     private fun onScreenStreamStateChanged(generation: Int, type: Int, active: Boolean) {
+         runOnUiThread {
+             if (shuttingDown.get() || generation != restartGeneration) return@runOnUiThread
+-            if (type == SCREEN_TYPE_MAIN) PsaConnectionState.set("视频", if (active) "视频流活跃" else "视频流空闲")
++            if (type == SCREEN_TYPE_MAIN) {
++                if (!active) mainFirstFrameReady = false
++                PsaConnectionState.set("视频", if (!active) "视频流空闲" else if (mainFirstFrameReady) "FIRST_FRAME：已输出首帧" else "视频流就绪，等待首帧")
++            }
+             if (active) {
+                 activeScreenStreamTypes.add(type)
+             } else {
+@@ -3625,7 +3645,7 @@ class CarPlayHostActivity : ComponentActivity() {
+ 
+     private fun updateDebugOverlays() {
+         statusScrollView?.visibility = View.GONE
+-        connectionPanel?.visibility = if (activeScreenStreamTypes.isEmpty()) View.VISIBLE else View.GONE
++        connectionPanel?.visibility = if (mainFirstFrameReady && SCREEN_TYPE_MAIN in activeScreenStreamTypes) View.GONE else View.VISIBLE
+     }
+ 
+     private fun friendlyStage(message: String): String = when {
+diff --git a/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt b/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
+index ddd49a7..97c4fc7 100644
+--- a/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
++++ b/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
+@@ -192,6 +192,7 @@ class DiPlayActivity : ComponentActivity() {
+     }
+ 
+     private fun home(content: LinearLayout) {
++        if (PsaHomeLayout.compact(resources.configuration.screenWidthDp, resources.configuration.screenHeightDp)) { compactHome(content); return }
+         content.addView(button("详细连接状态 / USB口校准", false) { startActivity(Intent(this, PsaStatusActivity::class.java)) }, matchButton())
+         val wide = resources.configuration.screenWidthDp >= 850
+         val body = column()
+@@ -258,6 +259,43 @@ class DiPlayActivity : ComponentActivity() {
+         content.addView(body)
+     }
+ 
++    // 1920 x 720 reference: three columns keep primary actions inside the short viewport.
++    private fun compactHome(content: LinearLayout) {
++        val body = row().apply { gravity = Gravity.TOP }
++        val connection = card()
++        connection.addView(label("PSA CarPlay", 28, TEXT, true))
++        status = label("等待连接", 20, TEXT, true)
++        connection.addView(status, matchButton(12, 48))
++        connectButton = button("连接手机", true) {
++            if (CarPlayBackgroundSession.hasSession()) openProjection()
++            else connect(AirPlayPersistence.loadWirelessEnabled(this))
++        }
++        connection.addView(connectButton, matchButton(12, 60))
++        connection.addView(button("蓝牙设备列表", false) { choosePhone() }, matchButton(12, 56))
++        disconnectButton = button("断开 CarPlay", false) {
++            disconnectButton?.isEnabled = false
++            CarPlayBackgroundSession.stop { runOnUiThread { refreshStatus() } }
++        }.apply { visibility = View.GONE }
++        connection.addView(disconnectButton, matchButton(8, 56))
++        val modes = card()
++        modes.addView(label("连接方式", 22, TEXT, true))
++        connectionModeControls(modes)
++        modes.addView(label("无线连接先配对蓝牙，再使用车机热点或已有局域网", 14, MUTED))
++        val tools = card()
++        tools.addView(label("设置与诊断", 22, TEXT, true))
++        tools.addView(button("Wi-Fi 设置", false) { openCarClientWifiSettings() }, matchButton(12, 56))
++        tools.addView(button("系统热点设置", false) { openSystem(Intent("android.settings.TETHER_SETTINGS")) }, matchButton(8, 56))
++        tools.addView(button("连接配置", false) { page = "connection"; render() }, matchButton(8, 56))
++        tools.addView(button("连接诊断 / USB", false) { startActivity(Intent(this, PsaStatusActivity::class.java)) }, matchButton(8, 56))
++        tools.addView(button("软件设置", false) { page = "settings"; render() }, matchButton(8, 56))
++        listOf(connection, modes, tools).forEachIndexed { index, panel ->
++            if (index > 0) body.addView(space(16), LinearLayout.LayoutParams(dp(16), 1))
++            body.addView(panel, LinearLayout.LayoutParams(0, -2, 1f))
++        }
++        content.addView(body)
++        setupError?.let { content.addView(label(it, 14, WARNING)) }
++    }
++
+     private fun settings(content: LinearLayout) {
+         content.addView(label(getString(R.string.your_drive_your_way), 34, TEXT, true))
+         content.addView(label(getString(R.string.apply_reconnects_carplay_for_size_resolution_music_buffer), 17, MUTED).apply { setPadding(0, dp(8), 0, dp(24)) })
+diff --git a/common/src/main/java/com/shilapi/xcertplay/PsaHomeLayout.kt b/common/src/main/java/com/shilapi/xcertplay/PsaHomeLayout.kt
+new file mode 100644
+index 0000000..7814389
+--- /dev/null
++++ b/common/src/main/java/com/shilapi/xcertplay/PsaHomeLayout.kt
+@@ -0,0 +1,6 @@
++package com.shilapi.xcertplay
++
++/** Short, wide head units use a single row of connection cards. */
++object PsaHomeLayout {
++    fun compact(widthDp: Int, heightDp: Int): Boolean = widthDp >= 960 && heightDp > 0 && widthDp.toFloat() / heightDp >= 2.4f
++}
+diff --git a/common/src/main/res/values-ar/strings.xml b/common/src/main/res/values-ar/strings.xml
+index 5b2e324..c5bd269 100644
+--- a/common/src/main/res/values-ar/strings.xml
++++ b/common/src/main/res/values-ar/strings.xml
+@@ -71,7 +71,6 @@
+     <string name="audio_stream_unavailable">نوع البث %1$d غير متاح هنا (الحالة=%2$s)</string>
+     <string name="resolution_handshake_prefix">دقة المصافحة:\u0020</string>
+     <string name="safe_area_full_screen_at">المنطقة الآمنة: ملء الشاشة بحجم\u0020</string>
+-    <string name="settings_android9_compat">الإعدادات التالية غير متاحة ومخفية على Android 9 (API 28):\n• Wi-Fi P2P (5 GHz) — يُستخدم LocalOnlyHotspot بدلاً منه.\n• مفكّك HEVC البرمجي — يُستخدم فك الترميز العتادي بدلاً منه.</string>
+     <string name="settings_mfi_address_hint">يجب أن يبدأ العنوان بـ http:// أو https://. الرمز الاختياري ويُرسل كـ Authorization bearer token.</string>
+     <string name="language_section_title">اللغة</string>
+     <string name="language_app_language">لغة التطبيق</string>
+@@ -366,7 +365,6 @@
+     <string name="waiting_for_mfi_coprocessor">بانتظار معالج MFi المساعد</string>
+     <string name="waiting_for_paired_iphone">بانتظار iPhone المقترن</string>
+     <string name="wi_fi_direct_is_still_busy_close_the_other_projection_app">ما زال Wi-Fi Direct مشغولاً. أغلق تطبيق العرض الآخر وحاول مجدداً.</string>
+-    <string name="wi_fi_p2p_5_ghz">‏Wi-Fi P2P (5 GHz)</string>
+     <string name="wi_fi_session">جلسة واي فاي</string>
+     <string name="widest_width">أقصى عرض</string>
+     <string name="window">نافذة</string>
+@@ -467,4 +465,5 @@
+     <string name="center_map_no_permission_screen">لا توجد في وحدة القيادة شاشة إعدادات لهذا الإذن. اسمح به عبر ADB.</string>
+     <string name="launcher_map_sharing">مشاركة الخريطة المباشرة مع المشغّلات الأخرى</string>
+     <string name="launcher_map_sharing_description">يمكن للمشغّلات التي تدعم DiPlay عرض خريطة لوحة العدادات المباشرة داخل شاشتها الرئيسية. معطّل افتراضيًا، لأن أي تطبيق على وحدة القيادة يمكنه عندها طلب الخريطة. راجع docs/LAUNCHER_INTEGRATION.md.</string>
++    <string name="settings_android9_compat">الإعدادات التالية غير متاحة ومخفية على Android 9 (API 28):\n• مفكّك HEVC البرمجي — يُستخدم فك الترميز العتادي بدلاً منه.</string>
+ </resources>
+diff --git a/common/src/main/res/values-es/strings.xml b/common/src/main/res/values-es/strings.xml
+index 5ff4596..071a121 100644
+--- a/common/src/main/res/values-es/strings.xml
++++ b/common/src/main/res/values-es/strings.xml
+@@ -71,7 +71,6 @@
+     <string name="audio_stream_unavailable">El tipo de flujo %1$d no está disponible aquí (estado=%2$s)</string>
+     <string name="resolution_handshake_prefix">Resolución del enlace:\u0020</string>
+     <string name="safe_area_full_screen_at">Zona segura: pantalla completa en\u0020</string>
+-    <string name="settings_android9_compat">Los siguientes ajustes no están disponibles y están ocultos en Android 9 (API 28):\n• Wi-Fi P2P (5 GHz) — se usa LocalOnlyHotspot en su lugar.\n• Decodificador por software HEVC — se usa la decodificación por hardware en su lugar.</string>
+     <string name="settings_mfi_address_hint">La dirección debe empezar por http:// o https://. El token es opcional y se envía como Authorization bearer token.</string>
+     <string name="language_section_title">Idioma</string>
+     <string name="language_app_language">Idioma de la aplicación</string>
+@@ -366,7 +365,6 @@
+     <string name="waiting_for_mfi_coprocessor">Esperando al coprocesador MFi</string>
+     <string name="waiting_for_paired_iphone">Esperando al iPhone emparejado</string>
+     <string name="wi_fi_direct_is_still_busy_close_the_other_projection_app">Wi-Fi Direct sigue ocupado. Cierra la otra aplicación de proyección e inténtalo de nuevo.</string>
+-    <string name="wi_fi_p2p_5_ghz">Wi-Fi P2P (5 GHz)</string>
+     <string name="wi_fi_session">Sesión Wi‑Fi</string>
+     <string name="widest_width">Ancho máximo</string>
+     <string name="window">Ventana</string>
+@@ -467,4 +465,5 @@
+     <string name="center_map_no_permission_screen">Esta unidad principal no tiene pantalla de ajustes para este permiso. Permítelo por ADB.</string>
+     <string name="launcher_map_sharing">Compartir el mapa en vivo con otros launchers</string>
+     <string name="launcher_map_sharing_description">Los launchers compatibles con DiPlay pueden mostrar el mapa en vivo del panel de instrumentos en su propia pantalla de inicio. Desactivado por defecto, porque entonces cualquier aplicación de la unidad principal podría pedir el mapa. Consulta docs/LAUNCHER_INTEGRATION.md.</string>
++    <string name="settings_android9_compat">Los siguientes ajustes no están disponibles y están ocultos en Android 9 (API 28):\n• Decodificador por software HEVC — se usa la decodificación por hardware en su lugar.</string>
+ </resources>
+diff --git a/common/src/main/res/values-ru/strings.xml b/common/src/main/res/values-ru/strings.xml
+index 67587bc..a541c7d 100644
+--- a/common/src/main/res/values-ru/strings.xml
++++ b/common/src/main/res/values-ru/strings.xml
+@@ -71,7 +71,6 @@
+     <string name="audio_stream_unavailable">Тип потока %1$d недоступен здесь (состояние=%2$s)</string>
+     <string name="resolution_handshake_prefix">Разрешение рукопожатия:\u0020</string>
+     <string name="safe_area_full_screen_at">Безопасная область: полный экран \u0020</string>
+-    <string name="settings_android9_compat">Следующие настройки недоступны и скрыты на Android 9 (API 28):\n• Wi-Fi P2P (5 ГГц) — вместо него используется LocalOnlyHotspot.\n• Программный декодер HEVC — вместо него используется аппаратное декодирование.</string>
+     <string name="settings_mfi_address_hint">Адрес должен начинаться с http:// или https://. Токен необязателен и отправляется как Authorization bearer token.</string>
+     <string name="language_section_title">Язык</string>
+     <string name="language_app_language">Язык приложения</string>
+@@ -366,7 +365,6 @@
+     <string name="waiting_for_mfi_coprocessor">Ожидание сопроцессора MFi</string>
+     <string name="waiting_for_paired_iphone">Ожидание связанного iPhone</string>
+     <string name="wi_fi_direct_is_still_busy_close_the_other_projection_app">Wi-Fi Direct всё ещё занят. Закройте другое приложение проекции и повторите.</string>
+-    <string name="wi_fi_p2p_5_ghz">Wi-Fi P2P (5 ГГц)</string>
+     <string name="wi_fi_session">Сеанс Wi-Fi</string>
+     <string name="widest_width">Наибольшая ширина</string>
+     <string name="window">Окно</string>
+@@ -467,4 +465,5 @@
+     <string name="center_map_no_permission_screen">На этом головном устройстве нет экрана настроек для этого разрешения. Разрешите его через ADB.</string>
+     <string name="launcher_map_sharing">Делиться живой картой с другими лаунчерами</string>
+     <string name="launcher_map_sharing_description">Лаунчеры с поддержкой DiPlay смогут показывать живую карту приборной панели на своём главном экране. Выключено по умолчанию, потому что тогда карту сможет запросить любое приложение на головном устройстве. Подробнее: docs/LAUNCHER_INTEGRATION.md.</string>
++    <string name="settings_android9_compat">Следующие настройки недоступны и скрыты на Android 9 (API 28):\n• Программный декодер HEVC — вместо него используется аппаратное декодирование.</string>
+ </resources>
+diff --git a/common/src/main/res/values-uk/strings.xml b/common/src/main/res/values-uk/strings.xml
+index 09339ff..2d49dec 100644
+--- a/common/src/main/res/values-uk/strings.xml
++++ b/common/src/main/res/values-uk/strings.xml
+@@ -73,7 +73,6 @@
+     <string name="resolution_handshake_prefix">Роздільна здатність узгодження:\u0020</string>
+     <string name="safe_area_full_screen_at">Безпечна область: увесь екран,\u0020</string>
+     <string name="safe_area_mapping_summary">Безпечна область: %1$d x %2$d у точці (%3$d, %4$d) на екрані %5$d x %6$d</string>
+-    <string name="settings_android9_compat">Наведені нижче налаштування недоступні та приховані в Android 9 (API 28):\n• Wi-Fi P2P (5 ГГц) — натомість використовується LocalOnlyHotspot.\n• Програмний декодер HEVC — натомість використовується апаратне декодування.</string>
+     <string name="settings_mfi_address_hint">Адреса має починатися з http:// або https://. Токен необов’язковий і надсилається як токен авторизації Bearer.</string>
+     <string name="app_name">PSA CarPlay</string>
+     <string name="language_section_title">Мова</string>
+@@ -377,7 +376,6 @@
+     <string name="waiting_for_mfi_coprocessor">Очікування співпроцесора MFi</string>
+     <string name="waiting_for_paired_iphone">Очікування спареного iPhone</string>
+     <string name="wi_fi_direct_is_still_busy_close_the_other_projection_app">Wi-Fi Direct усе ще зайнятий. Закрийте інший застосунок проєкції та спробуйте знову.</string>
+-    <string name="wi_fi_p2p_5_ghz">Wi-Fi P2P (5 ГГц)</string>
+     <string name="wi_fi_session">Сеанс Wi-Fi</string>
+     <string name="widest_width">Найбільша ширина</string>
+     <string name="window">Вікно</string>
+@@ -479,4 +477,5 @@
+     <string name="widget_minutes">%1$d хв</string>
+     <string name="widget_no_route">Немає маршруту</string>
+     <string name="widget_not_connected">CarPlay не підключено</string>
++    <string name="settings_android9_compat">Наведені нижче налаштування недоступні та приховані в Android 9 (API 28):\n• Програмний декодер HEVC — натомість використовується апаратне декодування.</string>
+ </resources>
+diff --git a/common/src/main/res/values-zh-rCN/strings.xml b/common/src/main/res/values-zh-rCN/strings.xml
+index 173b05a..e2f1219 100644
+--- a/common/src/main/res/values-zh-rCN/strings.xml
++++ b/common/src/main/res/values-zh-rCN/strings.xml
+@@ -71,7 +71,6 @@
+     <string name="audio_stream_unavailable">流类型 %1$d 在此不可用（状态=%2$s）</string>
+     <string name="resolution_handshake_prefix">握手分辨率：</string>
+     <string name="safe_area_full_screen_at">安全区域：全屏，</string>
+-    <string name="settings_android9_compat">Android 9：Wi-Fi Direct 为实验模式，频段由系统选择；未知信道以0进行测试，iPhone是否接受尚未验证。HEVC软解码不可用，使用硬件解码。</string>
+     <string name="settings_mfi_address_hint">地址必须以 http:// 或 https:// 开头。令牌为可选项，将作为 Authorization bearer token 发送。</string>
+     <string name="a_familiar_drive">熟悉的驾乘体验。</string>
+     <string name="a_previous_wi_fi_direct_connection_is_still_running_reset">之前的 Wi-Fi Direct 连接仍在运行。请重置后再连接。</string>
+@@ -375,7 +374,6 @@
+     <string name="waiting_for_mfi_coprocessor">正在等待 MFi 协处理器</string>
+     <string name="waiting_for_paired_iphone">正在等待已配对的 iPhone</string>
+     <string name="wi_fi_direct_is_still_busy_close_the_other_projection_app">Wi-Fi Direct 仍被占用。请关闭其他投屏应用后重试。</string>
+-    <string name="wi_fi_p2p_5_ghz">Wi-Fi P2P（5 GHz）</string>
+     <string name="wi_fi_session">Wi-Fi 会话</string>
+     <string name="widest_width">较宽边</string>
+     <string name="window">窗口</string>
+@@ -478,4 +476,5 @@
+     <string name="center_map_no_permission_screen">此车机没有该权限的设置界面，请通过 ADB 允许。</string>
+     <string name="launcher_map_sharing">与其他启动器共享实时地图</string>
+     <string name="launcher_map_sharing_description">支持 DiPlay 的启动器可以在自己的主屏幕中显示实时仪表盘地图。默认关闭，因为开启后车机上的任何应用都可以请求该地图。详见 docs/LAUNCHER_INTEGRATION.md。</string>
++    <string name="settings_android9_compat">Android 9：Wi-Fi Direct 为实验模式，频段由系统选择；未知信道以0进行测试，iPhone是否接受尚未验证。HEVC软解码不可用，使用硬件解码。</string>
+ </resources>
+diff --git a/common/src/main/res/values/strings.xml b/common/src/main/res/values/strings.xml
+index 667cd4d..fd53268 100644
+--- a/common/src/main/res/values/strings.xml
++++ b/common/src/main/res/values/strings.xml
+@@ -72,7 +72,6 @@
+     <string name="resolution_handshake_prefix">Handshake resolution:\u0020</string>
+     <string name="safe_area_full_screen_at">Safe area: full screen at\u0020</string>
+     <string name="safe_area_mapping_summary">Safe area: %1$d x %2$d at (%3$d, %4$d) in %5$d x %6$d</string>
+-    <string name="settings_android9_compat">Android 9: Wi-Fi Direct is experimental and uses a system-selected band. Unknown channel is sent as 0 for testing; iPhone acceptance is unverified. HEVC software decoding is unavailable; hardware decoding is used.</string>
+     <string name="settings_mfi_address_hint">Address must start with http:// or https://. Token is optional and sent as an Authorization bearer token.</string>
+     <string name="app_name">PSA CarPlay</string>
+     <string name="language_section_title">Language</string>
+@@ -376,7 +375,6 @@
+     <string name="waiting_for_mfi_coprocessor">Waiting for MFi coprocessor</string>
+     <string name="waiting_for_paired_iphone">Waiting for paired iPhone</string>
+     <string name="wi_fi_direct_is_still_busy_close_the_other_projection_app">Wi-Fi Direct is still busy. Close the other projection app and try again.</string>
+-    <string name="wi_fi_p2p_5_ghz">Wi-Fi P2P (5 GHz)</string>
+     <string name="wi_fi_session">Wi-Fi session</string>
+     <string name="widest_width">Widest width</string>
+     <string name="window">Window</string>
+@@ -478,4 +476,5 @@
+     <string name="center_map_no_permission_screen">This head unit has no settings screen for this permission. Allow it over ADB.</string>
+     <string name="launcher_map_sharing">Share the live map with other launchers</string>
+     <string name="launcher_map_sharing_description">Launchers that support DiPlay can show the live dashboard map inside their own home screen. Off by default, because any app on the head unit could then ask for the map. See docs/LAUNCHER_INTEGRATION.md.</string>
++    <string name="settings_android9_compat">Android 9: Wi-Fi Direct is experimental and uses a system-selected band. Unknown channel is sent as 0 for testing; iPhone acceptance is unverified. HEVC software decoding is unavailable; hardware decoding is used.</string>
+ </resources>
+diff --git a/common/src/test/java/com/shilapi/xcertplay/CarPlayHostPreparationTest.kt b/common/src/test/java/com/shilapi/xcertplay/CarPlayHostPreparationTest.kt
+index eb3a200..1ae25b6 100644
+--- a/common/src/test/java/com/shilapi/xcertplay/CarPlayHostPreparationTest.kt
++++ b/common/src/test/java/com/shilapi/xcertplay/CarPlayHostPreparationTest.kt
+@@ -47,13 +47,26 @@ class CarPlayHostPreparationTest {
+         assertEquals(View.VISIBLE, (field("connectionPanel") as View).visibility)
+     }
+ 
+-    @Test fun streamEndRestoresOriginalPreparationPanel() {
++    @Test fun firstFrameThenStreamEndRestoresPreparationPanel() {
+         stream(0, true)
++        assertEquals(View.VISIBLE, (field("connectionPanel") as View).visibility)
++        frame(0, 110)
+         assertEquals(View.GONE, (field("connectionPanel") as View).visibility)
+         stream(0, false)
+         assertEquals(View.VISIBLE, (field("connectionPanel") as View).visibility)
+     }
+ 
++    @Test fun altFrameAndStaleMainFrameCannotHideWaitingPanel() {
++        stream(0, true)
++        frame(0, 130)
++        frame(-1, 110)
++        assertEquals(View.VISIBLE, (field("connectionPanel") as View).visibility)
++    }
++
++    private fun frame(generation: Int, type: Int) {
++        method("onFirstFrameRendered", Int::class.javaPrimitiveType!!, Int::class.javaPrimitiveType!!).invoke(activity, generation, type)
++    }
++
+     private fun stream(generation: Int, active: Boolean) {
+         method("onScreenStreamStateChanged", Int::class.javaPrimitiveType!!,
+             Int::class.javaPrimitiveType!!, Boolean::class.javaPrimitiveType!!)
+diff --git a/common/src/test/java/com/shilapi/xcertplay/SystemHotspotManagerTest.kt b/common/src/test/java/com/shilapi/xcertplay/ManualHotspotManagerTest.kt
+similarity index 85%
+rename from common/src/test/java/com/shilapi/xcertplay/SystemHotspotManagerTest.kt
+rename to common/src/test/java/com/shilapi/xcertplay/ManualHotspotManagerTest.kt
+index eb9a64d..3cdde14 100644
+--- a/common/src/test/java/com/shilapi/xcertplay/SystemHotspotManagerTest.kt
++++ b/common/src/test/java/com/shilapi/xcertplay/ManualHotspotManagerTest.kt
+@@ -9,32 +9,32 @@ import org.robolectric.annotation.Config
+ import java.net.InetAddress
+ @RunWith(RobolectricTestRunner::class)
+ @Config(sdk=[28], manifest=Config.NONE)
+-class SystemHotspotManagerTest {
++class ManualHotspotManagerTest {
+     private val context get()=RuntimeEnvironment.getApplication()
+     private fun live()=ExistingSystemAp.Snapshot(true,"PSA-live","password123",false,44,null,
+         ExistingSystemAp.Link("wlan7",7,listOf(InetAddress.getByName("192.168.43.1")),"AA:BB:CC:DD:EE:FF"))
+     @Test fun liveConfigurationWinsAndConfiguredChannelIsNotActualFrequency() {
+         context.getSharedPreferences("psa_hotspot",0).edit().clear().putString("ssid","stale").putString("password","oldpassword").commit()
+-        SystemHotspotManager(context,false,readSnapshot={live()}).use {
++        ManualHotspotManager(context,false,readSnapshot={live()}).use {
+             val result=it.start(1000);assertEquals("PSA-live",result.ssid);assertEquals("password123",result.passphrase)
+             assertEquals("wlan7",result.interfaceName);assertEquals(0,result.channel);assertNull(result.frequencyMHz)
+             it.validateReady()
+         }
+     }
+     @Test fun stopOnlyDetachesAndCanStartAgainWithNewManager() {
+-        repeat(5) { SystemHotspotManager(context,false,readSnapshot={live()}).use { it.start(1000);it.validateReady() } }
++        repeat(5) { ManualHotspotManager(context,false,readSnapshot={live()}).use { it.start(1000);it.validateReady() } }
+     }
+     @Test fun disabledHotspotIsNotCreated() {
+-        val manager=SystemHotspotManager(context,true,readSnapshot={live().copy(enabled=false)})
++        val manager=ManualHotspotManager(context,true,readSnapshot={live().copy(enabled=false)})
+         try { manager.start(1000);fail() } catch(e:LanConnectionException) { assertTrue(e.message!!.contains("HOTSPOT_NOT_READY")) }
+     }
+     @Test fun oldPasswordCannotStandInForChangedLiveSsid() {
+         context.getSharedPreferences("psa_hotspot",0).edit().clear().putString("ssid","stale").putString("password","oldpassword").commit()
+-        try { SystemHotspotManager(context,true,readSnapshot={live().copy(password=null)}).start(1000);fail() }
++        try { ManualHotspotManager(context,true,readSnapshot={live().copy(password=null)}).start(1000);fail() }
+         catch(e:LanConnectionException) { assertTrue(e.message!!.contains("NETWORK_IDENTITY_UNVERIFIED")) }
+     }
+     @Test fun networkChangeFailsValidation() {
+-        var state=live();val manager=SystemHotspotManager(context,false,readSnapshot={state});manager.start(1000)
++        var state=live();val manager=ManualHotspotManager(context,false,readSnapshot={state});manager.start(1000)
+         state=state.copy(enabled=false)
+         try {manager.validateReady();fail()} catch(e:LanConnectionException){assertTrue(e.message!!.contains("INTERFACE_CHANGED"))}
+     }
+diff --git a/common/src/test/java/com/shilapi/xcertplay/PsaWideHomeTest.kt b/common/src/test/java/com/shilapi/xcertplay/PsaWideHomeTest.kt
+new file mode 100644
+index 0000000..8da3dca
+--- /dev/null
++++ b/common/src/test/java/com/shilapi/xcertplay/PsaWideHomeTest.kt
+@@ -0,0 +1,31 @@
++package com.shilapi.xcertplay
++
++import android.view.View
++import android.view.ViewGroup
++import android.widget.TextView
++import org.junit.Assert.*
++import org.junit.Test
++import org.junit.runner.RunWith
++import org.robolectric.Robolectric
++import org.robolectric.RobolectricTestRunner
++import org.robolectric.annotation.Config
++
++@RunWith(RobolectricTestRunner::class)
++@Config(sdk = [28], qualifiers = "w1920dp-h720dp-land-mdpi")
++class PsaWideHomeTest {
++    @Test fun requiredHomeActionsFit1920By720() {
++        val activity = Robolectric.buildActivity(DiPlayActivity::class.java).get()
++        DiPlayActivity::class.java.getDeclaredMethod("render").apply { isAccessible = true }.invoke(activity)
++        val root = activity.findViewById<ViewGroup>(android.R.id.content)
++        root.measure(View.MeasureSpec.makeMeasureSpec(1920, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(720, View.MeasureSpec.EXACTLY))
++        root.layout(0, 0, 1920, 720)
++        fun descendants(v: View): List<View> = listOf(v) + if (v is ViewGroup) (0 until v.childCount).flatMap { descendants(v.getChildAt(it)) } else emptyList()
++        val all = descendants(root)
++        listOf("连接手机", "蓝牙设备列表", "Wi-Fi 设置", "系统热点设置", "连接配置", "连接诊断 / USB").forEach { title ->
++            val control = all.filterIsInstance<TextView>().single { it.text.toString() == title }
++            val rect = android.graphics.Rect()
++            assertTrue(title, control.getGlobalVisibleRect(rect))
++            assertTrue("$title clipped: $rect", rect.width() >= control.width && rect.height() >= control.height)
++        }
++    }
++}
+diff --git a/common/src/test/java/com/shilapi/xcertplay/UsbNcmClosedTunTest.kt b/common/src/test/java/com/shilapi/xcertplay/UsbNcmClosedTunTest.kt
+new file mode 100644
+index 0000000..b715877
+--- /dev/null
++++ b/common/src/test/java/com/shilapi/xcertplay/UsbNcmClosedTunTest.kt
+@@ -0,0 +1,57 @@
++package com.shilapi.xcertplay
++
++import android.os.ParcelFileDescriptor
++import com.shilapi.xcertplay.network.Ipv6NcmBridge
++import com.shilapi.xcertplay.transport.NcmUsbBridge
++import java.lang.reflect.InvocationTargetException
++import java.util.concurrent.atomic.AtomicBoolean
++import org.junit.Assert.*
++import org.junit.Test
++import org.junit.runner.RunWith
++import org.mockito.Mockito.*
++import org.robolectric.RobolectricTestRunner
++import org.robolectric.annotation.Config
++
++/** Reproduce USB teardown before either NCM/TUN worker acquires its descriptor. */
++@RunWith(RobolectricTestRunner::class)
++@Config(sdk = [28, 33], manifest = Config.NONE)
++class UsbNcmClosedTunTest {
++    @Test fun inboundClosedTunUsesExistingTransportErrorCallback() = closedTun("runNcmToTun", true)
++    @Test fun outboundClosedTunUsesExistingTransportErrorCallback() = closedTun("runTunToNcm", true)
++    @Test fun inboundClosedTunAfterStopDoesNotReportAnotherFailure() = closedTun("runNcmToTun", false)
++    @Test fun outboundClosedTunAfterStopDoesNotReportAnotherFailure() = closedTun("runTunToNcm", false)
++
++    private fun closedTun(worker: String, running: Boolean) {
++        val pipe = ParcelFileDescriptor.createPipe()
++        val tun = pipe[0]
++        try {
++            tun.close()
++            // This is a real closed Android descriptor, not a mocked constructor failure.
++            assertTrue(runCatching { tun.fileDescriptor }.exceptionOrNull() is IllegalStateException)
++            val ncm = mock(NcmUsbBridge::class.java)
++            val errors = mutableListOf<Throwable>()
++            val bridge = Ipv6NcmBridge(ncm, tun, ByteArray(6)) { errors += it }
++            (Ipv6NcmBridge::class.java.getDeclaredField("running")
++                .apply { isAccessible = true }.get(bridge) as AtomicBoolean).set(running)
++            val escaped = try {
++                Ipv6NcmBridge::class.java.getDeclaredMethod(worker)
++                    .apply { isAccessible = true }.invoke(bridge)
++                null
++            } catch (error: InvocationTargetException) {
++                error.cause
++            }
++            if (System.getenv("USB_EXPECT_BASELINE_CRASH") == "1") {
++                // Executed against the untouched pinned baseline by Actions.
++                assertTrue("Baseline exception must escape $worker", escaped is IllegalStateException)
++                assertTrue(errors.isEmpty())
++            } else {
++                assertNull("USB worker must not leak a closed-TUN exception", escaped)
++                assertEquals(if (running) 1 else 0, errors.size)
++                if (running) assertTrue(errors.single() is IllegalStateException)
++            }
++            verifyNoInteractions(ncm)
++        } finally {
++            pipe[1].close()
++        }
++    }
++}
+diff --git a/mobile/build.gradle.kts b/mobile/build.gradle.kts
+index 3a85aad..52daf99 100644
+--- a/mobile/build.gradle.kts
++++ b/mobile/build.gradle.kts
+@@ -17,8 +17,8 @@ android {
+         applicationId = "com.psa.carplay"
+         minSdk = 28
+         targetSdk = 37
+-        versionCode = 212
+-        versionName = "0.2.12"
++        versionCode = 215
++        versionName = "0.2.15"
+ 
+     }
+ 
+diff --git a/shared/src/main/AndroidManifest.xml b/shared/src/main/AndroidManifest.xml
+index f5a1878..15c2051 100644
+--- a/shared/src/main/AndroidManifest.xml
++++ b/shared/src/main/AndroidManifest.xml
+@@ -24,7 +24,6 @@
+         android:name="android.hardware.usb.host"
+         android:required="false" />
+ 
+-    <uses-feature android:name="android.hardware.wifi.direct" android:required="false" />
+ 
+     <queries>
+         <intent>
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/media/AndroidMediaSink.kt b/shared/src/main/java/com/shilapi/xcertplay/media/AndroidMediaSink.kt
+index 85ca71d..16fbfa2 100644
+--- a/shared/src/main/java/com/shilapi/xcertplay/media/AndroidMediaSink.kt
++++ b/shared/src/main/java/com/shilapi/xcertplay/media/AndroidMediaSink.kt
+@@ -136,6 +136,7 @@ class AndroidMediaSink(
+     private val onAudioDiagnostic: (String) -> Unit = {},
+     /** True while any music ("media") audio stream is running; called from media threads. */
+     private val onMediaAudioChanged: (Boolean) -> Unit = {},
++    onFirstFrameRendered: ((Int) -> Unit)? = null,
+ ) : MediaSink {
+     private val appContext = context?.applicationContext
+     private val audioManager = appContext?.getSystemService(AudioManager::class.java)
+@@ -146,6 +147,8 @@ class AndroidMediaSink(
+     )
+     private val screenStateLock = Any()
+     private val activeScreenTypes = mutableSetOf<Int>()
++    private val renderedScreenTypes = mutableSetOf<Int>()
++    @Volatile private var firstFrameRendered = onFirstFrameRendered
+     private val defaultSurface = surface
+     @Volatile private var screenStreamActiveChanged = onScreenStreamActiveChanged
+     private val surfaces = ConcurrentHashMap<Int, Surface>()
+@@ -228,6 +231,13 @@ class AndroidMediaSink(
+         }
+     }
+ 
++    fun setFirstFrameRenderedListener(listener: ((Int) -> Unit)?) {
++        synchronized(screenStateLock) {
++            firstFrameRendered = listener
++            renderedScreenTypes.forEach { listener?.invoke(it) }
++        }
++    }
++
+     override fun onVideoCodec(type: Int, codec: VideoCodec) {
+         pendingVideoCodec[type] = codec
+     }
+@@ -245,6 +255,7 @@ class AndroidMediaSink(
+     }
+ 
+     override fun onScreenStreamActive(type: Int, active: Boolean) {
++        if (!active) synchronized(screenStateLock) { renderedScreenTypes.remove(type) }
+         if (!active) {
+             videoRecoveryHandlers.remove(type)
+             videoDiagnosticHandlers.remove(type)
+@@ -340,6 +351,8 @@ class AndroidMediaSink(
+             activeScreenTypes.forEach { screenStreamActiveChanged?.invoke(it, false) }
+             activeScreenTypes.clear()
+             screenStreamActiveChanged = null
++            firstFrameRendered = null
++            renderedScreenTypes.clear()
+         }
+         videoDecoders.values.forEach(VideoDecoder::close)
+         videoDecoders.clear()
+@@ -373,7 +386,13 @@ class AndroidMediaSink(
+         videoHeight,
+         preferSoftwareHevcDecoder,
+         requestKeyFrame = { requestVideoRecovery(type) },
+-        report = { videoDiagnosticHandlers[type]?.invoke(it) },
++        report = { message ->
++            if (message == "first frame rendered" && statsLabel == null) synchronized(screenStateLock) {
++                renderedScreenTypes.add(type)
++                firstFrameRendered?.invoke(type)
++            }
++            videoDiagnosticHandlers[type]?.invoke(message)
++        },
+         statsLabel = statsLabel,
+     )
+ 
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/network/ExistingWifiManager.kt b/shared/src/main/java/com/shilapi/xcertplay/network/ExistingWifiManager.kt
+index dae3c2e..f2481ec 100644
+--- a/shared/src/main/java/com/shilapi/xcertplay/network/ExistingWifiManager.kt
++++ b/shared/src/main/java/com/shilapi/xcertplay/network/ExistingWifiManager.kt
+@@ -79,7 +79,7 @@ class ExistingWifiManager(
+         return true
+     }
+ 
+-    private val callback = object : ConnectivityManager.NetworkCallback() {
++    private val events = object : ConnectivityManager.NetworkCallback() {
+         override fun onLost(network: Network) {
+             if (network == selected && !runCatching { refreshAlias(network) }.getOrDefault(false)) invalidate("network lost")
+         }
+@@ -96,6 +96,15 @@ class ExistingWifiManager(
+         }
+     }
+ 
++    // The flags constructor does not exist on the Android 8/9 target car ROM.
++    private val callback: ConnectivityManager.NetworkCallback = if (Build.VERSION.SDK_INT >= 31) {
++        object : ConnectivityManager.NetworkCallback(ConnectivityManager.NetworkCallback.FLAG_INCLUDE_LOCATION_INFO) {
++            override fun onLost(network: Network) = events.onLost(network)
++            override fun onLinkPropertiesChanged(network: Network, properties: LinkProperties) = events.onLinkPropertiesChanged(network, properties)
++            override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) = events.onCapabilitiesChanged(network, capabilities)
++        }
++    } else events
++
+     override fun start(timeoutMillis: Long): LanNetworkInfo {
+         check(Looper.myLooper() != Looper.getMainLooper()) {
+             "ExistingWifiManager.start must not run on the main thread"
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/network/Ipv6NcmBridge.kt b/shared/src/main/java/com/shilapi/xcertplay/network/Ipv6NcmBridge.kt
+index 05e1833..f4d20e1 100644
+--- a/shared/src/main/java/com/shilapi/xcertplay/network/Ipv6NcmBridge.kt
++++ b/shared/src/main/java/com/shilapi/xcertplay/network/Ipv6NcmBridge.kt
+@@ -61,8 +61,9 @@ class Ipv6NcmBridge(
+     }
+ 
+     private fun runNcmToTun() {
+-        val output = FileOutputStream(tun.fileDescriptor)
+         try {
++            // USB teardown may close the TUN before this worker begins.
++            val output = FileOutputStream(tun.fileDescriptor)
+             while (running.get()) {
+                 val frame = ncm.recv(READ_TIMEOUT_MILLIS) ?: continue
+                 val ipv6 = EthernetIpv6Codec.parseIpv6View(frame) ?: continue
+@@ -89,9 +90,10 @@ class Ipv6NcmBridge(
+     }
+ 
+     private fun runTunToNcm() {
+-        val input = FileInputStream(tun.fileDescriptor)
+-        val buffer = ByteArray(TUN_READ_BYTES)
+         try {
++            // Keep descriptor acquisition inside the existing transport error boundary.
++            val input = FileInputStream(tun.fileDescriptor)
++            val buffer = ByteArray(TUN_READ_BYTES)
+             while (running.get()) {
+                 val length = input.read(buffer)
+                 if (length == -1) {
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/network/SystemHotspotManager.kt b/shared/src/main/java/com/shilapi/xcertplay/network/ManualHotspotManager.kt
+similarity index 98%
+rename from shared/src/main/java/com/shilapi/xcertplay/network/SystemHotspotManager.kt
+rename to shared/src/main/java/com/shilapi/xcertplay/network/ManualHotspotManager.kt
+index d27732d..1ee7af8 100644
+--- a/shared/src/main/java/com/shilapi/xcertplay/network/SystemHotspotManager.kt
++++ b/shared/src/main/java/com/shilapi/xcertplay/network/ManualHotspotManager.kt
+@@ -5,7 +5,7 @@ import com.shilapi.xcertplay.transport.Iap2WirelessSecurity
+ import java.io.IOException
+ 
+ /** Attaches only to a pre-existing system hotspot; close never changes system network state. */
+-class SystemHotspotManager(context: Context, private val manualConfirmed: Boolean,
++class ManualHotspotManager(context: Context, private val manualConfirmed: Boolean,
+     private val diagnostic: (String) -> Unit = {},
+     private val readSnapshot: ((String) -> ExistingSystemAp.Snapshot)? = null) : LanNetworkManager {
+     private val prefs = context.getSharedPreferences("psa_hotspot", 0)
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt b/shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt
+index c9e932e..dcaad50 100644
+--- a/shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt
++++ b/shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt
+@@ -1889,7 +1889,7 @@ class CarPlayController(
+     private fun startWirelessHotspot(generation: Int): LanNetworkInfo {
+         val settings = appContext.getSharedPreferences("psa_lan", 0)
+         val manager: com.shilapi.xcertplay.network.LanNetworkManager = if (config.wirelessHotspotMode == WirelessHotspotMode.SYSTEM_HOTSPOT)
+-            com.shilapi.xcertplay.network.SystemHotspotManager(appContext, config.hotspotManualConfirmed, ::debugLog)
++            com.shilapi.xcertplay.network.ManualHotspotManager(appContext, config.hotspotManualConfirmed, ::debugLog)
+         else com.shilapi.xcertplay.network.ExistingWifiManager(appContext,
+             settings.getString("ssid", "").orEmpty(), settings.getString("password", "").orEmpty(),
+             ::debugLog, { if (!isStaleWirelessRun(generation)) fail(com.shilapi.xcertplay.network.LanConnectionException(
