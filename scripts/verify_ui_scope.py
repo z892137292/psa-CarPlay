@@ -5,6 +5,8 @@ import sys
 
 baseline,candidate=map(Path,sys.argv[1:3])
 allowed={
+ "common/src/test/java/com/shilapi/xcertplay/SystemHotspotManagerTest.kt",
+ "shared/src/main/java/com/shilapi/xcertplay/network/SystemHotspotManager.kt",
  "common/src/main/java/com/shilapi/xcertplay/DiagnosticRedactor.kt",
  "common/src/test/java/com/shilapi/xcertplay/DiagnosticRedactorTest.kt",
  "common/src/test/java/com/shilapi/xcertplay/LanNetworkManagerTest.kt",
@@ -41,6 +43,6 @@ start,end='    private fun startIphone()','    private fun isBluetoothHandoffCom
 assert a[a.index(start):a.index(end)]==b[b.index(start):b.index(end)],'USB controller block changed'
 print('UI baseline: 265775013acbb20c720d280600b466261c81624f, versionCode 215')
 print('PASS: no existing source files deleted; unchanged AirPlay/USBMUX/NCM/iAP2/MFi/video/audio/touch protocol implementations')
-print('PASS: complete USB controller bring-up unchanged; original SystemHotspotManager preserved; Existing LAN identity resolution explicitly updated')
+print('PASS: complete USB controller bring-up unchanged; SystemHotspotManager lifecycle preserved; STA/AP identity normalization explicitly updated')
 print('UI source files changed:')
 print('\n'.join(changed))

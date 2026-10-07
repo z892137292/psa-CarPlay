@@ -6,10 +6,12 @@ common/src/main/java/com/shilapi/xcertplay/NetworkSettingsLauncher.kt
 common/src/test/java/com/shilapi/xcertplay/DiagnosticRedactorTest.kt
 common/src/test/java/com/shilapi/xcertplay/LanNetworkManagerTest.kt
 common/src/test/java/com/shilapi/xcertplay/NetworkIdentityResolverTest.kt
+common/src/test/java/com/shilapi/xcertplay/SystemHotspotManagerTest.kt
 mobile/build.gradle.kts
 shared/src/main/java/com/shilapi/xcertplay/network/ExistingSystemAp.kt
 shared/src/main/java/com/shilapi/xcertplay/network/ExistingWifiManager.kt
 shared/src/main/java/com/shilapi/xcertplay/network/NetworkIdentityResolver.kt
+shared/src/main/java/com/shilapi/xcertplay/network/SystemHotspotManager.kt
 shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt
 shared/src/main/java/com/shilapi/xcertplay/orchestration/ExistingLanSuccessEvidence.kt
 shared/src/test/java/com/shilapi/xcertplay/orchestration/ExistingLanSuccessEvidenceTest.kt
