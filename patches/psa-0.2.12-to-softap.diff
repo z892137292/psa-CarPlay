@@ -1,5 +1,5 @@
 diff --git a/common/src/main/java/com/shilapi/xcertplay/AirPlayPersistence.kt b/common/src/main/java/com/shilapi/xcertplay/AirPlayPersistence.kt
-index 7e3d4a2..86fdbbb 100644
+index 7e3d4a2..4755615 100644
 --- a/common/src/main/java/com/shilapi/xcertplay/AirPlayPersistence.kt
 +++ b/common/src/main/java/com/shilapi/xcertplay/AirPlayPersistence.kt
 @@ -179,8 +179,7 @@ object AirPlayPersistence {
@@ -12,15 +12,10 @@ index 7e3d4a2..86fdbbb 100644
  
      fun saveWirelessEnabled(context: Context, enabled: Boolean) {
          context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-@@ -234,15 +233,23 @@ object AirPlayPersistence {
+@@ -234,15 +233,31 @@ object AirPlayPersistence {
              .apply()
      }
  
--    fun loadWirelessHotspotMode(context: Context): WirelessHotspotMode {
--        val saved = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("wireless_hotspot_mode", null)
--        val mode = if (saved == WirelessHotspotMode.SYSTEM_HOTSPOT.name) WirelessHotspotMode.SYSTEM_HOTSPOT else WirelessHotspotMode.EXISTING_WIFI
--        saveWirelessHotspotMode(context, mode)
--        return mode
 +    fun loadConnectionMode(context: Context): com.shilapi.xcertplay.orchestration.ConnectionMode {
 +        val prefs=context.getSharedPreferences(PREFS,Context.MODE_PRIVATE)
 +        val saved=prefs.getString("connection_mode",null)
@@ -31,20 +26,32 @@ index 7e3d4a2..86fdbbb 100644
 +    fun saveConnectionMode(context: Context, mode: com.shilapi.xcertplay.orchestration.ConnectionMode) {
 +        context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).edit().putString("connection_mode",mode.name)
 +            .putBoolean(KEY_WIRELESS_ENABLED,mode != com.shilapi.xcertplay.orchestration.ConnectionMode.USB).apply()
++    }
+     fun loadWirelessHotspotMode(context: Context): WirelessHotspotMode {
+-        val saved = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("wireless_hotspot_mode", null)
+-        val mode = if (saved == WirelessHotspotMode.SYSTEM_HOTSPOT.name) WirelessHotspotMode.SYSTEM_HOTSPOT else WirelessHotspotMode.EXISTING_WIFI
+-        saveWirelessHotspotMode(context, mode)
+-        return mode
++        return when(loadConnectionMode(context)) {
++            com.shilapi.xcertplay.orchestration.ConnectionMode.EXISTING_LAN -> WirelessHotspotMode.EXISTING_LAN
++            com.shilapi.xcertplay.orchestration.ConnectionMode.AUTO,com.shilapi.xcertplay.orchestration.ConnectionMode.WIRELESS_AP -> WirelessHotspotMode.WIRELESS_AP
++            com.shilapi.xcertplay.orchestration.ConnectionMode.USB -> {
++                val saved=context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).getString(KEY_WIRELESS_HOTSPOT_MODE,null)
++                if(saved in listOf("EXISTING_WIFI","EXISTING_LAN")) WirelessHotspotMode.EXISTING_LAN else WirelessHotspotMode.WIRELESS_AP
++            }
++        }
      }
-+    fun loadWirelessHotspotMode(context: Context): WirelessHotspotMode =
-+        if(loadConnectionMode(context)==com.shilapi.xcertplay.orchestration.ConnectionMode.EXISTING_LAN) WirelessHotspotMode.EXISTING_LAN else WirelessHotspotMode.WIRELESS_AP
      fun saveWirelessHotspotMode(context: Context, mode: WirelessHotspotMode) {
 -        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
 -            .putString("wireless_hotspot_mode", mode.name).apply()
-+        if(loadConnectionMode(context)==com.shilapi.xcertplay.orchestration.ConnectionMode.AUTO) return
-+        saveConnectionMode(context,if(mode==WirelessHotspotMode.EXISTING_LAN || mode==WirelessHotspotMode.EXISTING_WIFI)
-+            com.shilapi.xcertplay.orchestration.ConnectionMode.EXISTING_LAN else com.shilapi.xcertplay.orchestration.ConnectionMode.WIRELESS_AP)
++        // Wireless parameters never change the selected transport (especially manual USB/AUTO).
++        context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).edit().putString(KEY_WIRELESS_HOTSPOT_MODE,
++            if(mode==WirelessHotspotMode.EXISTING_LAN || mode==WirelessHotspotMode.EXISTING_WIFI) "EXISTING_LAN" else "WIRELESS_AP").apply()
      }
  
      fun loadDebugLogsEnabled(context: Context): Boolean =
 diff --git a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt b/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
-index f91a557..01140e1 100644
+index f91a557..d7df140 100644
 --- a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
 +++ b/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
 @@ -321,7 +321,8 @@ class CarPlayHostActivity : ComponentActivity() {
@@ -180,7 +187,16 @@ index f91a557..01140e1 100644
                  } else if (status.manualRecoveryRequired) {
                      wifiRecoveryButton?.visibility = View.VISIBLE
                  } else {
-@@ -3127,6 +3095,12 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -3009,6 +2977,8 @@ class CarPlayHostActivity : ComponentActivity() {
+             return false
+         }
+         displayDiagnosticAttempt = DisplayDiagnosticSnapshot.currentAttempt(this)
++        wirelessEnabled=snapshot.controller.sessionTransport() == CarPlayTransport.WIRELESS
++        transportManager.begin(!wirelessEnabled)
+         controller = snapshot.controller
+         sink = snapshot.sink
+         sessionDisplay = snapshot.display
+@@ -3127,6 +3097,12 @@ class CarPlayHostActivity : ComponentActivity() {
              },
          )
          controller = next
@@ -193,7 +209,7 @@ index f91a557..01140e1 100644
          CarPlayMediaKeys.attach(this, next)
          if (airPlayConfig.videoInCar) CarPlayVideo.attach(this, next)
          val display = CarPlaySessionDisplay(airPlayConfig.main.widthPixels, airPlayConfig.main.heightPixels,
-@@ -3308,7 +3282,7 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -3308,7 +3284,7 @@ class CarPlayHostActivity : ComponentActivity() {
      }
  
      private fun reconnectAfterLoss(reason: String) {
@@ -202,7 +218,7 @@ index f91a557..01140e1 100644
              (reason.contains("NETWORK_IDENTITY_UNVERIFIED") || reason.contains("NETWORK_AMBIGUOUS") || reason.contains("IPV4_UNAVAILABLE"))) {
              setConnectionStage("LAN 网络身份未验证，请检查精确位置权限和 LAN 设置后人工连接")
              return
-@@ -3399,7 +3373,13 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -3399,7 +3375,13 @@ class CarPlayHostActivity : ComponentActivity() {
                      }
                      CarPlayBackgroundSession.closed(oldController)
                      handshakeResetInProgress = false
@@ -217,7 +233,7 @@ index f91a557..01140e1 100644
                  }
              }
          }
-@@ -3713,17 +3693,26 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -3713,17 +3695,26 @@ class CarPlayHostActivity : ComponentActivity() {
      private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
  
      private fun CarPlayStatus.describe(): String = when (this) {
@@ -364,6 +380,81 @@ index 0a06313..39edaf5 100644
              assertNull(app.getSharedPreferences("psa_lan", 0).getString("ssid", null))
          }
      }
+diff --git a/common/src/test/java/com/shilapi/xcertplay/LanNetworkManagerTest.kt b/common/src/test/java/com/shilapi/xcertplay/LanNetworkManagerTest.kt
+index 5700631..cc224f3 100644
+--- a/common/src/test/java/com/shilapi/xcertplay/LanNetworkManagerTest.kt
++++ b/common/src/test/java/com/shilapi/xcertplay/LanNetworkManagerTest.kt
+@@ -137,7 +137,7 @@ class LanNetworkManagerTest {
+         AirPlayPersistence.saveWirelessHotspotMode(app, com.shilapi.xcertplay.orchestration.WirelessHotspotMode.EXISTING_WIFI)
+         app.getSharedPreferences("psa_lan", 0).edit().putString("ssid", "router").commit()
+         assertFalse(AirPlayPersistence.loadWirelessEnabled(app))
+-        assertEquals(com.shilapi.xcertplay.orchestration.WirelessHotspotMode.EXISTING_WIFI, AirPlayPersistence.loadWirelessHotspotMode(app))
++        assertEquals(com.shilapi.xcertplay.orchestration.WirelessHotspotMode.EXISTING_LAN, AirPlayPersistence.loadWirelessHotspotMode(app))
+     }
+     @Test fun diagnosticsDoNotExportPrivateParameters() {
+         assertNull(DiagnosticRedactor.redact("LAN password=private"))
+diff --git a/common/src/test/java/com/shilapi/xcertplay/SoftApLifecycleTest.kt b/common/src/test/java/com/shilapi/xcertplay/SoftApLifecycleTest.kt
+new file mode 100644
+index 0000000..0579719
+--- /dev/null
++++ b/common/src/test/java/com/shilapi/xcertplay/SoftApLifecycleTest.kt
+@@ -0,0 +1,56 @@
++package com.shilapi.xcertplay
++
++import com.shilapi.xcertplay.network.*
++import com.shilapi.xcertplay.transport.Iap2WirelessSecurity
++import java.io.IOException
++import java.net.InetAddress
++import org.junit.Assert.*
++import org.junit.Test
++import org.junit.runner.RunWith
++import org.robolectric.RobolectricTestRunner
++import org.robolectric.RuntimeEnvironment
++import org.robolectric.annotation.Config
++
++@RunWith(RobolectricTestRunner::class)
++@Config(sdk=[28],manifest=Config.NONE)
++class SoftApLifecycleTest {
++    private class Backend(val failure: Boolean=false, val cleanupFails: Boolean=false) : SoftApBackend {
++        override val name="fake"
++        var starts=0; var stops=0
++        override fun start(request: SoftApRequest, timeoutMillis: Long): SoftApSnapshot {
++            starts++
++            if(failure) throw IOException("permission_missing")
++            return snapshot()
++        }
++        override fun snapshot()=SoftApSnapshot(LanNetworkInfo("live","secret123",Iap2WirelessSecurity.WPA_WPA2,
++            44,5220,null,"ap1",InetAddress.getByName("192.168.42.1"),"5 GHz",LanNetworkBackend.WIRELESS_AP),"system",emptySet())
++        override fun close() { stops++; if(cleanupFails) throw IOException("cleanup_failed") }
++    }
++    @Test fun constructionDoesNotStartNetwork() {
++        val backend=Backend()
++        val manager=SessionSoftApManager(RuntimeEnvironment.getApplication(),{}) { listOf(backend) }
++        assertEquals(0,backend.starts)
++        manager.close()
++        assertEquals(0,backend.stops)
++    }
++    @Test fun apiFallbackWaitsForRootCleanup() {
++        val root=Backend(failure=true); val api=Backend()
++        val manager=SessionSoftApManager(RuntimeEnvironment.getApplication(),{}) { listOf(root,api) }
++        assertEquals("ap1",manager.start(1000).interfaceName)
++        assertEquals(1,root.stops); assertEquals(1,api.starts)
++        manager.close(); assertEquals(1,api.stops)
++    }
++    @Test fun failedCleanupBlocksNextBackend() {
++        val root=Backend(failure=true,cleanupFails=true); val api=Backend()
++        val manager=SessionSoftApManager(RuntimeEnvironment.getApplication(),{}) { listOf(root,api) }
++        assertThrows(IOException::class.java) { manager.start(1000) }
++        assertEquals(0,api.starts)
++    }
++    @Test fun closedGenerationCannotRestartAp() {
++        val backend=Backend()
++        val manager=SessionSoftApManager(RuntimeEnvironment.getApplication(),{}) { listOf(backend) }
++        manager.close()
++        assertThrows(IllegalStateException::class.java) { manager.start(1000) }
++        assertEquals(0,backend.starts)
++    }
++}
 diff --git a/experimental/wifi-direct/HotspotInterfaceBssid.kt b/experimental/wifi-direct/HotspotInterfaceBssid.kt
 new file mode 100644
 index 0000000..023aee3
@@ -1500,10 +1591,10 @@ index 85ca71d..a9e8fbe 100644
                  TAG,
 diff --git a/shared/src/main/java/com/shilapi/xcertplay/network/AndroidApiSoftApBackend.kt b/shared/src/main/java/com/shilapi/xcertplay/network/AndroidApiSoftApBackend.kt
 new file mode 100644
-index 0000000..8342a83
+index 0000000..8eed824
 --- /dev/null
 +++ b/shared/src/main/java/com/shilapi/xcertplay/network/AndroidApiSoftApBackend.kt
-@@ -0,0 +1,88 @@
+@@ -0,0 +1,90 @@
 +package com.shilapi.xcertplay.network
 +
 +import android.content.Context
@@ -1587,6 +1678,8 @@ index 0000000..8342a83
 +        val n = network ?: throw IOException("SOFTAP_NOT_STARTED")
 +        val iface = NetworkInterface.getByName(n.interfaceName)
 +        if (closed || iface?.isUp != true || n.hostAddresses.any { it !in iface.inetAddresses.toList() }) throw IOException("SOFTAP_NETWORK_LOST")
++        val frequency=radio.forBssid(n.bssid)?.frequencyMHz ?: LegacyHotspotRadio.read(n.interfaceName!!,"5 GHz").frequencyMHz
++        if(frequency!=null && frequency!=n.frequencyMHz) throw IOException("SOFTAP_RADIO_CHANGED")
 +        return SoftApSnapshot(n,"system_local_only_reservation",emptySet())
 +    }
 +    override fun close() = synchronized(lock) { closed=true; radio.close(); reservation?.close(); reservation=null; network=null }
@@ -1816,7 +1909,7 @@ index 0000000..47bc4ea
 +}
 diff --git a/shared/src/main/java/com/shilapi/xcertplay/network/RootSoftApBackend.kt b/shared/src/main/java/com/shilapi/xcertplay/network/RootSoftApBackend.kt
 new file mode 100644
-index 0000000..5046258
+index 0000000..5a37ddf
 --- /dev/null
 +++ b/shared/src/main/java/com/shilapi/xcertplay/network/RootSoftApBackend.kt
 @@ -0,0 +1,111 @@
@@ -1914,7 +2007,7 @@ index 0000000..5046258
 +        val json=read()
 +        if(!json.optBoolean("enabled")) throw IOException("SOFTAP_NETWORK_LOST")
 +        val result = SoftApPolicy.verify(parse(json))
-+        attached?.let { old -> if (old.interfaceName != result.network.interfaceName || old.hostAddresses.toSet() != result.network.hostAddresses.toSet()) throw IOException("SOFTAP_INTERFACE_CHANGED") }
++        attached?.let { old -> if (old.interfaceName != result.network.interfaceName || old.hostAddresses.toSet() != result.network.hostAddresses.toSet() || old.frequencyMHz != result.network.frequencyMHz) throw IOException("SOFTAP_INTERFACE_CHANGED") }
 +        return result
 +    }
 +    override fun close() {
@@ -1933,10 +2026,10 @@ index 0000000..5046258
 +}
 diff --git a/shared/src/main/java/com/shilapi/xcertplay/network/RootSoftApMain.kt b/shared/src/main/java/com/shilapi/xcertplay/network/RootSoftApMain.kt
 new file mode 100644
-index 0000000..9938b69
+index 0000000..ae115da
 --- /dev/null
 +++ b/shared/src/main/java/com/shilapi/xcertplay/network/RootSoftApMain.kt
-@@ -0,0 +1,147 @@
+@@ -0,0 +1,150 @@
 +package com.shilapi.xcertplay.network
 +
 +import android.content.Context
@@ -2022,7 +2115,10 @@ index 0000000..9938b69
 +        kotlin.system.exitProcess(0)
 +    }
 +    private fun call(target: Any, name: String, vararg args: Any): Any? {
-+        val m = target.javaClass.methods.firstOrNull { it.name == name && it.parameterTypes.size == args.size }
++        val m = target.javaClass.methods.firstOrNull { it.name == name && it.parameterTypes.size == args.size && it.parameterTypes.zip(args).all { (type,arg) ->
++            type.isInstance(arg) || (type==Int::class.javaPrimitiveType && arg is Int) ||
++                (type==Boolean::class.javaPrimitiveType && arg is Boolean)
++        } }
 +            ?: throw NoSuchMethodException(name)
 +        return m.invoke(target,*args)
 +    }
@@ -2086,10 +2182,10 @@ index 0000000..9938b69
 +}
 diff --git a/shared/src/main/java/com/shilapi/xcertplay/network/SessionSoftApManager.kt b/shared/src/main/java/com/shilapi/xcertplay/network/SessionSoftApManager.kt
 new file mode 100644
-index 0000000..793f53a
+index 0000000..9a6a647
 --- /dev/null
 +++ b/shared/src/main/java/com/shilapi/xcertplay/network/SessionSoftApManager.kt
-@@ -0,0 +1,40 @@
+@@ -0,0 +1,42 @@
 +package com.shilapi.xcertplay.network
 +
 +import android.content.Context
@@ -2097,7 +2193,9 @@ index 0000000..793f53a
 +import java.util.UUID
 +
 +/** Owns only the AP of this generation; no Wi-Fi Direct fallback. */
-+class SessionSoftApManager(private val context: Context, private val log: (String) -> Unit) : LanNetworkManager {
++class SessionSoftApManager(private val context: Context, private val log: (String) -> Unit,
++    private val backends: () -> List<SoftApBackend> = { listOf(RootSoftApBackend(context),AndroidApiSoftApBackend(context)) },
++) : LanNetworkManager {
 +    @Volatile private var closed = false
 +    private var backend: SoftApBackend? = null
 +    @Volatile var live: SoftApSnapshot? = null
@@ -2107,7 +2205,7 @@ index 0000000..793f53a
 +        val request = SoftApRequest("PSA-CarPlay-${UUID.randomUUID().toString().take(6)}",UUID.randomUUID().toString().replace("-", "").take(16))
 +        val deadline = System.nanoTime()+timeoutMillis*1_000_000
 +        val failures = mutableListOf<String>()
-+        for (candidate in listOf(RootSoftApBackend(context),AndroidApiSoftApBackend(context))) {
++        for (candidate in backends()) {
 +            if(closed) throw IOException("SOFTAP_CANCELLED")
 +            backend=candidate
 +            try {
@@ -2132,7 +2230,7 @@ index 0000000..793f53a
 +}
 diff --git a/shared/src/main/java/com/shilapi/xcertplay/network/SoftApBackend.kt b/shared/src/main/java/com/shilapi/xcertplay/network/SoftApBackend.kt
 new file mode 100644
-index 0000000..35d9299
+index 0000000..082415b
 --- /dev/null
 +++ b/shared/src/main/java/com/shilapi/xcertplay/network/SoftApBackend.kt
 @@ -0,0 +1,27 @@
@@ -2159,13 +2257,13 @@ index 0000000..35d9299
 +        require(!n.interfaceName.isNullOrBlank() && !n.interfaceName.startsWith("p2p", true)) { "SOFTAP_INTERFACE_INVALID" }
 +        require(n.hostAddresses.any { it is java.net.Inet4Address }) { "SOFTAP_IPV4_UNAVAILABLE" }
 +        require(n.ssid.isNotBlank() && n.passphrase.length >= 8) { "SOFTAP_CREDENTIALS_UNAVAILABLE" }
-+        require(n.frequencyMHz in 5160..5895 || n.channel in 32..177) { "SOFTAP_5GHZ_UNVERIFIED" }
++        require(n.frequencyMHz in 5160..5895 && n.frequencyMHz?.let(::wifiFrequencyMhzToChannel) == n.channel) { "SOFTAP_5GHZ_UNVERIFIED" }
 +        return snapshot
 +    }
 +}
 diff --git a/shared/src/main/java/com/shilapi/xcertplay/orchestration/BoundPhoneSession.kt b/shared/src/main/java/com/shilapi/xcertplay/orchestration/BoundPhoneSession.kt
 new file mode 100644
-index 0000000..fdea31d
+index 0000000..e0cca7b
 --- /dev/null
 +++ b/shared/src/main/java/com/shilapi/xcertplay/orchestration/BoundPhoneSession.kt
 @@ -0,0 +1,116 @@
@@ -2192,20 +2290,20 @@ index 0000000..fdea31d
 +    val mfiReady: Boolean = true,
 +    val createdAt: Long = System.nanoTime(),
 +) {
-+    var transportIdentifier: String? = null
++    @Volatile var transportIdentifier: String? = null
 +        private set
-+    var wirelessCarPlayAvailable = false
-+    var expectedNetworkInterface: String? = null
-+    var expectedNetworkAddress: String? = null
-+    var airPlayPeerAddress: String? = null
++    @Volatile var wirelessCarPlayAvailable = false
++    @Volatile var expectedNetworkInterface: String? = null
++    @Volatile var expectedNetworkAddress: String? = null
++    @Volatile var airPlayPeerAddress: String? = null
 +        private set
-+    var airPlayDeviceId: String? = null
++    @Volatile var airPlayDeviceId: String? = null
 +        private set
-+    var airPlaySessionUuid: String? = null
++    @Volatile var airPlaySessionUuid: String? = null
 +        private set
-+    var tunnelReady = false
-+    var wirelessActive = false
-+    var lastActivityAt = createdAt
++    @Volatile var tunnelReady = false
++    @Volatile var wirelessActive = false
++    @Volatile var lastActivityAt = createdAt
 +        private set
 +
 +    @Synchronized fun transportIdentity(bluetooth: String?, usb: String?): Boolean {
@@ -2286,7 +2384,7 @@ index 0000000..fdea31d
 +    fun elapsedMillis() = (now()-started)/1_000_000
 +}
 diff --git a/shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt b/shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt
-index c9e932e..84ee68c 100644
+index c9e932e..7668615 100644
 --- a/shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt
 +++ b/shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt
 @@ -102,6 +102,7 @@ sealed class CarPlayStatus {
@@ -2331,16 +2429,18 @@ index c9e932e..84ee68c 100644
              if (activeSession !== session) {
                  BydNavigationOutputs.start(appContext)
                  com.shilapi.xcertplay.glance.CarPlayGlance.setConnected(true)
-@@ -376,6 +385,8 @@ class CarPlayController(
+@@ -376,6 +385,10 @@ class CarPlayController(
          }
      }
  
++    fun sessionTransport(): CarPlayTransport = config.transport
++
 +    fun recordFirstAudio() { timeline?.mark("FIRST_AUDIO") }
 +
      fun isClosed(): Boolean = closed
  
      fun hasActiveAirPlayAttachment(): Boolean = synchronized(lifecycleLock) {
-@@ -414,6 +425,7 @@ class CarPlayController(
+@@ -414,6 +427,7 @@ class CarPlayController(
              else appContext.registerReceiver(receiver, filter)
              detachCloseable = Closeable { appContext.unregisterReceiver(receiver) }
          }
@@ -2348,7 +2448,7 @@ index c9e932e..84ee68c 100644
          startMfi()
      }
  
-@@ -917,7 +929,7 @@ class CarPlayController(
+@@ -917,7 +931,7 @@ class CarPlayController(
          wirelessHandoffRequested.set(false)
          wirelessTunnelReady.set(false)
          wirelessActiveReported.set(false)
@@ -2357,7 +2457,7 @@ index c9e932e..84ee68c 100644
          val generation = wirelessGeneration.incrementAndGet()
          executor.execute {
              runWireless(generation)
-@@ -931,7 +943,8 @@ class CarPlayController(
+@@ -931,7 +945,8 @@ class CarPlayController(
              {
                  try {
                      closeWirelessStack()
@@ -2367,7 +2467,7 @@ index c9e932e..84ee68c 100644
                  } finally { wirelessRestarting.set(false) }
              },
              "xcertplay-wireless-restart",
-@@ -945,6 +958,7 @@ class CarPlayController(
+@@ -945,6 +960,7 @@ class CarPlayController(
          try {
              debugLog("wireless bring-up generation=$generation starting")
              closeWirelessStack()
@@ -2375,7 +2475,7 @@ index c9e932e..84ee68c 100644
              if (
                  closed ||
                  phase != Phase.WIRELESS ||
-@@ -955,15 +969,59 @@ class CarPlayController(
+@@ -955,15 +971,60 @@ class CarPlayController(
  
              val mfi = mfiSession?.client
                  ?: throw IOException("MFi coprocessor client is unavailable")
@@ -2414,6 +2514,7 @@ index c9e932e..84ee68c 100644
 +            var startedHotspot: LanNetworkManager? = null
 +            var listenerPort = 7000
 +            var addressRecovery = com.shilapi.xcertplay.network.BoundedAddressHandoff(emptyList())
++            wirelessLocationRequest=Iap2LocationRequest()
 +            val result = Iap2WirelessControlClient(channel,Iap2MfiAuthenticationClient(mfi)).run(
 +                identification=identification,
 +                authenticatedEndpoint={
@@ -2440,7 +2541,7 @@ index c9e932e..84ee68c 100644
              wirelessConnectionProof.begin(generation) {
                  if (!isStaleWirelessRun(generation)) startedHotspot?.onCarPlayConfirmed()
              }
-@@ -979,6 +1037,9 @@ class CarPlayController(
+@@ -979,6 +1040,9 @@ class CarPlayController(
                      "Wireless hotspot link-local IPv6 address is not scoped",
                  )
              }
@@ -2450,7 +2551,7 @@ index c9e932e..84ee68c 100644
              val hostAddressText = hostAddressText(hostAddress)
              debugLog("wireless existing network attached ssid=${hotspotInfo.ssid} iface=${hotspotInfo.interfaceName ?: "unknown"} clientJoined=unknown")
              val deviceIdentifier = airPlayConfig.deviceId // Stable receiver identity, never router/AP MAC.
-@@ -1001,34 +1062,7 @@ class CarPlayController(
+@@ -1001,34 +1065,7 @@ class CarPlayController(
                      backend = hotspotInfo.backend.label,
                  ),
              )
@@ -2486,7 +2587,7 @@ index c9e932e..84ee68c 100644
              run {
              onStatus(CarPlayStatus.AttachingNetwork)
              val service = awaitVpnService()
-@@ -1052,6 +1086,7 @@ class CarPlayController(
+@@ -1052,6 +1089,7 @@ class CarPlayController(
                      throw IOException(result.message)
              }
              listenerPort = service.boundPort() ?: wirelessAirPlayConfig.port
@@ -2494,7 +2595,7 @@ index c9e932e..84ee68c 100644
              val advertisedAirPlayConfig = wirelessAirPlayConfig.copy(port = listenerPort)
              debugLog(
                  "wireless AirPlay listener attached bind=$hostAddressText " +
-@@ -1059,8 +1094,7 @@ class CarPlayController(
+@@ -1059,8 +1097,7 @@ class CarPlayController(
                      (if (listenerPort != airPlayConfig.port) " (preferred ${airPlayConfig.port} in use)" else ""),
              )
              if (isStaleWirelessRun(generation)) {
@@ -2504,7 +2605,7 @@ index c9e932e..84ee68c 100644
              }
  
              val bonjourClient = CarPlayBonjour(
-@@ -1092,6 +1126,9 @@ class CarPlayController(
+@@ -1092,6 +1129,9 @@ class CarPlayController(
                          try {
                              startedHotspot?.validateReady()
                              val now = System.nanoTime()
@@ -2514,7 +2615,7 @@ index c9e932e..84ee68c 100644
                              if (!bonjourClient.publicationReady()) {
                                  debugLog("Bonjour local registration invalid; repairing publication without repeating MFi")
                                  bonjourClient.refreshInvalidPublication()
-@@ -1107,11 +1144,12 @@ class CarPlayController(
+@@ -1107,11 +1147,12 @@ class CarPlayController(
                              }
                              if (lan.evidence.timedOut(now)) throw com.shilapi.xcertplay.network.LanConnectionException(
                                  com.shilapi.xcertplay.network.LanFailure.FIRST_TCP_TIMEOUT,
@@ -2528,7 +2629,7 @@ index c9e932e..84ee68c 100644
                                  fail(failure)
                              }
                          }
-@@ -1125,39 +1163,17 @@ class CarPlayController(
+@@ -1125,39 +1166,17 @@ class CarPlayController(
              }, 30, TimeUnit.SECONDS)
  
              if (isStaleWirelessRun(generation)) {
@@ -2571,13 +2672,13 @@ index c9e932e..84ee68c 100644
              val endpoint = Iap2WirelessCarPlayEndpoint(
                  ssid = hotspotInfo.ssid,
                  passphrase = hotspotInfo.passphrase,
-@@ -1169,51 +1185,44 @@ class CarPlayController(
+@@ -1169,51 +1188,43 @@ class CarPlayController(
                  publicKey = identity.publicKeyHex,
                  sourceVersion = airPlayConfig.sourceVersion,
              )
 -            wirelessIdentification = identification
              wirelessAirPlayEndpoint = endpoint
-             wirelessLocationRequest = Iap2LocationRequest()
+-            wirelessLocationRequest = Iap2LocationRequest()
              media.setIapTunnelHandler(::startWirelessTunnelControl)
  
 -            onStatus(CarPlayStatus.RunningWireless)
@@ -2651,7 +2752,7 @@ index c9e932e..84ee68c 100644
                  },
              )
              if (isStaleWirelessRun(generation)) {
-@@ -1262,14 +1271,25 @@ class CarPlayController(
+@@ -1262,14 +1273,25 @@ class CarPlayController(
                  debugLog("wireless RFCOMM control ended after tunnel handoff: ${error.message}")
              } else {
                  debugLog("wireless bring-up failed", error)
@@ -2678,7 +2779,7 @@ index c9e932e..84ee68c 100644
          if (closed || config.transport != CarPlayTransport.WIRELESS) return false
          val identification = wirelessIdentification ?: return false
          val endpoint = wirelessAirPlayEndpoint ?: return false
-@@ -1304,6 +1324,7 @@ class CarPlayController(
+@@ -1304,6 +1326,7 @@ class CarPlayController(
                          // The iPhone asks for location only on the Bluetooth link (see Iap2LocationRequest).
                          locationRequest = wirelessLocationRequest,
                          continueLocationRequest = true,
@@ -2686,12 +2787,12 @@ index c9e932e..84ee68c 100644
                          onReady = {
                              onWirelessTunnelReady(generation)
                          },
-@@ -1341,6 +1362,26 @@ class CarPlayController(
+@@ -1341,6 +1364,26 @@ class CarPlayController(
  
      private fun wirelessSessionListener(generation: Int): AirPlaySessionListener =
          object : AirPlaySessionListener by sessionListener {
 +            override fun onDataStreamReady(session: AirPlaySession, type: Int, port: Int) {
-+                if(!isStaleWirelessRun(generation) && ownedWirelessSession.get() === session && type==130) { type130Port=port; wirelessDiag() }
++                if(!isStaleWirelessRun(generation) && ownedWirelessSession.get() === session && type==130 && type130Port==null) { type130Port=port; timeline?.mark("TYPE130_CREATED"); wirelessDiag() }
 +            }
 +            override fun acceptPeer(peer: InetAddress, local: InetAddress): Boolean {
 +                val clients=(hotspot as? com.shilapi.xcertplay.network.SessionSoftApManager)?.live?.clientIps.orEmpty()
@@ -2713,7 +2814,7 @@ index c9e932e..84ee68c 100644
              override fun onDebugLog(message: String) {
                  if (isStaleWirelessRun(generation)) return
                  if (message.startsWith("airplay TCP connection accepted") && message.contains("external=true"))
-@@ -1356,13 +1397,15 @@ class CarPlayController(
+@@ -1356,13 +1399,15 @@ class CarPlayController(
              }
  
              override fun onSessionActive(session: AirPlaySession) {
@@ -2731,7 +2832,7 @@ index c9e932e..84ee68c 100644
                  wirelessConnectionProof.end(generation, session)
                  sessionListener.onSessionEnded(session)
              }
-@@ -1371,6 +1414,7 @@ class CarPlayController(
+@@ -1371,6 +1416,7 @@ class CarPlayController(
                  if (isStaleWirelessRun(generation) || activeSession !== session) return
                  wirelessConnectionProof.rendered(generation, session)
                  lanDiagnostics?.mark("first_frame")
@@ -2739,7 +2840,7 @@ index c9e932e..84ee68c 100644
              }
  
              // Passed on explicitly: without these the car's video player never opened over Wi-Fi.
-@@ -1390,6 +1434,9 @@ class CarPlayController(
+@@ -1390,6 +1436,9 @@ class CarPlayController(
              return
          }
          wirelessTunnelReady.set(true)
@@ -2749,7 +2850,7 @@ index c9e932e..84ee68c 100644
          wirelessConnectionProof.authenticated(generation)
          debugLog(
              "wireless iAP2 tunnel ready; " +
-@@ -1399,7 +1446,7 @@ class CarPlayController(
+@@ -1399,7 +1448,7 @@ class CarPlayController(
      }
  
      private fun maybeCompleteWirelessHandoff() {
@@ -2758,7 +2859,7 @@ index c9e932e..84ee68c 100644
          if (!wirelessActiveReported.compareAndSet(false, true)) return
          val generation = wirelessGeneration.get()
          Thread(
-@@ -1413,6 +1460,9 @@ class CarPlayController(
+@@ -1413,6 +1462,9 @@ class CarPlayController(
                  }
                  debugLog("wireless handoff ready; closing Bluetooth bootstrap transport")
                  closeBluetoothBootstrapTransport()
@@ -2768,7 +2869,7 @@ index c9e932e..84ee68c 100644
                  onStatus(CarPlayStatus.WirelessActive)
              },
              "xcertplay-wireless-handoff",
-@@ -1454,7 +1504,7 @@ class CarPlayController(
+@@ -1454,7 +1506,7 @@ class CarPlayController(
                                  "wireless handoff tunnel iAP2 unavailable after first video frame; " +
                                      "preserving the active CarPlay session",
                              )
@@ -2777,7 +2878,7 @@ index c9e932e..84ee68c 100644
                              return@Thread
                          }
                          closeWirelessStack()
-@@ -1888,7 +1938,10 @@ class CarPlayController(
+@@ -1888,7 +1940,10 @@ class CarPlayController(
  
      private fun startWirelessHotspot(generation: Int): LanNetworkInfo {
          val settings = appContext.getSharedPreferences("psa_lan", 0)
@@ -2789,7 +2890,7 @@ index c9e932e..84ee68c 100644
              com.shilapi.xcertplay.network.SystemHotspotManager(appContext, config.hotspotManualConfirmed, ::debugLog)
          else com.shilapi.xcertplay.network.ExistingWifiManager(appContext,
              settings.getString("ssid", "").orEmpty(), settings.getString("password", "").orEmpty(),
-@@ -1902,6 +1955,27 @@ class CarPlayController(
+@@ -1902,6 +1957,27 @@ class CarPlayController(
          }
      }
  
@@ -2817,7 +2918,7 @@ index c9e932e..84ee68c 100644
      private fun isStaleWirelessRun(generation: Int): Boolean =
          closed || phase != Phase.WIRELESS || generation != wirelessGeneration.get()
  
-@@ -1910,10 +1984,6 @@ class CarPlayController(
+@@ -1910,10 +1986,6 @@ class CarPlayController(
  
      private fun selectWirelessBluetoothDevice(adapter: BluetoothAdapter): BluetoothDevice {
          val bonded = adapter.bondedDevices.orEmpty()
@@ -2828,7 +2929,7 @@ index c9e932e..84ee68c 100644
          val iPhones = bonded.filter { device ->
              device.name?.contains("iPhone", ignoreCase = true) == true
          }
-@@ -1938,6 +2008,10 @@ class CarPlayController(
+@@ -1938,6 +2010,10 @@ class CarPlayController(
                      connectedIPhones.joinToString { "${it.name ?: "iPhone"} (${it.address})" },
              )
          }
@@ -2839,7 +2940,7 @@ index c9e932e..84ee68c 100644
          if (iPhones.size == 1) return iPhones.single()
          if (iPhones.size > 1) {
              throw IOException(
-@@ -2014,6 +2088,9 @@ class CarPlayController(
+@@ -2014,6 +2090,9 @@ class CarPlayController(
      }
  
      @Synchronized private fun closeWirelessStack(service: CarPlayVpnService? = vpnService) {
@@ -2849,7 +2950,7 @@ index c9e932e..84ee68c 100644
          debugLog("wireless teardown session-only architecture=USB_LAN")
          wirelessConnectionProof.clear()
          wirelessAuthenticated.set(false)
-@@ -2307,6 +2384,7 @@ class CarPlayController(
+@@ -2307,6 +2386,7 @@ class CarPlayController(
      }
  
      private fun CarPlayStatus.debugLogMessage(): String = when (this) {
@@ -2989,7 +3090,7 @@ index b9fd93d..bac18a7 100644
                                  Iap2WirelessControlStage.POST_TRANSPORT_WIFI_CONFIG_SENT,
 diff --git a/shared/src/test/java/com/shilapi/xcertplay/network/SoftApPolicyTest.kt b/shared/src/test/java/com/shilapi/xcertplay/network/SoftApPolicyTest.kt
 new file mode 100644
-index 0000000..ee4175d
+index 0000000..eee8868
 --- /dev/null
 +++ b/shared/src/test/java/com/shilapi/xcertplay/network/SoftApPolicyTest.kt
 @@ -0,0 +1,20 @@
@@ -3002,7 +3103,7 @@ index 0000000..ee4175d
 +
 +class SoftApPolicyTest {
 +    private fun snapshot(iface: String="ap1",channel: Int=36,address: String="192.168.9.1") = SoftApSnapshot(
-+        LanNetworkInfo("test","secret123",Iap2WirelessSecurity.WPA_WPA2,channel,null,null,iface,
++        LanNetworkInfo("test","secret123",Iap2WirelessSecurity.WPA_WPA2,channel,if(channel>14) 5000+channel*5 else 2407+channel*5,null,iface,
 +            InetAddress.getByName(address),"5 GHz",LanNetworkBackend.WIRELESS_AP),"system",emptySet())
 +    @Test fun actualSystemSubnetIsAccepted() { assertEquals("192.168.9.1",SoftApPolicy.verify(snapshot()).network.hostAddress!!.hostAddress) }
 +    @Test fun stationAndDirectCannotBeInventedAsAp() { assertThrows(IllegalArgumentException::class.java) { SoftApPolicy.verify(snapshot("p2p0")) } }

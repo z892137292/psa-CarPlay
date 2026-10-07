@@ -5,6 +5,8 @@ common/src/main/java/com/shilapi/xcertplay/AirPlayPersistence.kt
 common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
 common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
 common/src/test/java/com/shilapi/xcertplay/HotspotModeMigrationTest.kt
+common/src/test/java/com/shilapi/xcertplay/LanNetworkManagerTest.kt
+common/src/test/java/com/shilapi/xcertplay/SoftApLifecycleTest.kt
 experimental/wifi-direct/HotspotInterfaceBssid.kt
 experimental/wifi-direct/P2pConfigurationMemory.kt
 experimental/wifi-direct/P2pOwnership.kt
