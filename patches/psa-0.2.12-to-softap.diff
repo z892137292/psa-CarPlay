@@ -1960,10 +1960,10 @@ index 0000000..c08c704
 +}
 diff --git a/shared/src/main/java/com/shilapi/xcertplay/network/RootSoftApBackend.kt b/shared/src/main/java/com/shilapi/xcertplay/network/RootSoftApBackend.kt
 new file mode 100644
-index 0000000..9e8bd3b
+index 0000000..4532119
 --- /dev/null
 +++ b/shared/src/main/java/com/shilapi/xcertplay/network/RootSoftApBackend.kt
-@@ -0,0 +1,119 @@
+@@ -0,0 +1,125 @@
 +package com.shilapi.xcertplay.network
 +
 +import android.content.Context
@@ -2013,6 +2013,12 @@ index 0000000..9e8bd3b
 +            "com.shilapi.xcertplay.network.RootSoftApMain " + (listOf(action) + args).joinToString(" ") { SoftApRootShell.quote(it) }
 +        return shell.run(cmd)
 +    }
++    private fun rejected(action: String, output: String): IOException {
++        val detail=output.lineSequence().firstOrNull { it.startsWith("SOFTAP_JSON=") }?.let {
++            runCatching { JSONObject(it.substringAfter('=')).optString("error","PLATFORM_REJECTED") }.getOrDefault("INVALID_RESPONSE")
++        } ?: "NO_PLATFORM_RESPONSE"
++        return IOException("ROOT_SOFTAP_${action}_REJECTED:$detail")
++    }
 +    private fun read(): JSONObject {
 +        val result = command("snapshot").lineSequence().firstOrNull { it.startsWith("SOFTAP_JSON=") }
 +            ?: throw IOException("ROOT_SOFTAP_SNAPSHOT_UNAVAILABLE")
@@ -2027,7 +2033,7 @@ index 0000000..9e8bd3b
 +        // Claim cleanup responsibility before a partially successful platform start.
 +        owned = true
 +        val result = command("start",listOf(request.ssid,request.password))
-+        if (!result.contains("SOFTAP_START_ACCEPTED")) throw IOException("ROOT_SOFTAP_START_REJECTED")
++        if (!result.contains("SOFTAP_START_ACCEPTED")) throw rejected("START",result)
 +        val deadline = System.nanoTime() + timeoutMillis * 1_000_000
 +        while (!closed && System.nanoTime() < deadline) {
 +            val json = read()
@@ -2073,7 +2079,7 @@ index 0000000..9e8bd3b
 +        closed = true
 +        if (owned) {
 +            val result = command("stop")
-+            if (!result.contains("SOFTAP_STOP_ACCEPTED")) throw IOException("ROOT_SOFTAP_STOP_REJECTED")
++            if (!result.contains("SOFTAP_STOP_ACCEPTED")) throw rejected("STOP",result)
 +            val deadline = System.nanoTime() + 5_000_000_000L
 +            while (read().optBoolean("enabled")) {
 +                if (System.nanoTime() >= deadline) throw IOException("ROOT_SOFTAP_STOP_TIMEOUT")
