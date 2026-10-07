@@ -71,7 +71,7 @@ diff --git a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt b
              }
              currentSurface = null
              currentSurfaceTexture = null
-+            carPlayUi.reset(restartGeneration,CarPlayBackgroundSession.decoderFrameReady)
++            carPlayUi.surfaceDetached()
 +            updateDebugOverlays()
              appendLog("Texture surface destroyed")
              return true
@@ -258,7 +258,7 @@ diff --git a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt b
                      if (controllerGeneration != restartGeneration) {
                          return@runOnUiThread
                      }
-+                    if(message=="Video: first frame rendered") { carPlayUi.decoded(controllerGeneration);CarPlayBackgroundSession.decoderFrameReady=true;updateDebugOverlays() }
++                    if(message=="Video: first frame rendered") { carPlayUi.decoded(controllerGeneration);CarPlayBackgroundSession.decoderFrameReady=carPlayUi.decoderFrame;updateDebugOverlays() }
                      DisplayDiagnosticSnapshot.record(this@CarPlayHostActivity, displayDiagnosticAttempt, message)
                      if (menuOpen) return@runOnUiThread
                      if (message.startsWith(PROTOCOL_TRACE_PREFIX)) {
@@ -292,7 +292,7 @@ diff --git a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt b
          sessionDisplay = snapshot.display
          MapMirrors.reapply()
          CarPlayBackgroundSession.store(snapshot.controller, snapshot.sink, snapshot.width, snapshot.height,
-@@ -3057,6 +3089,7 @@
+@@ -3057,14 +3089,18 @@
              },
          )
          updateDebugOverlays()
@@ -300,7 +300,19 @@ diff --git a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt b
          return true
      }
  
-@@ -3306,6 +3339,10 @@
+     private fun startCarPlay(size: DisplaySize) {
+         if (CarPlayBackgroundSession.hasSession() && !CarPlayBackgroundSession.isOwner(this)) return
+         if (CarPlayBackgroundSession.startBlocked()) { setConnectionStage("旧控制器尚未退出；连接已暂停"); return }
+-
+         if (shuttingDown.get() || menuOpen || handshakeResetInProgress || controller != null) return
++        carPlayUi.reset(restartGeneration)
++        CarPlayBackgroundSession.frameReady=false
++        CarPlayBackgroundSession.decoderFrameReady=false
++        updateDebugOverlays()
+         val controllerGeneration = restartGeneration
+         val config = createRuntimeConfig()
+         intent.removeExtra("psa_hotspot_manual_confirmed")
+@@ -3306,6 +3342,10 @@
      private fun returnHomeAfterConfirmedLoss(reason: String, eventNanos: Long) {
          activeAirPlaySession = null
          activeScreenStreamTypes.clear()
@@ -311,7 +323,7 @@ diff --git a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt b
          CarPlayBackgroundSession.active = false
          PsaConnectionState.set("连接", "等待重连")
          appendFileLog("CONNECTION_STATE state=DISCONNECTED reason=$reason eventNanos=$eventNanos")
-@@ -3370,6 +3407,10 @@
+@@ -3370,6 +3410,10 @@
          val size = activeDisplaySize ?: return
          appendLog(reason)
          activeScreenStreamTypes.clear()
@@ -322,7 +334,7 @@ diff --git a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt b
          setConnectionStage(reason)
          Log.i(TAG, "$reason; rebuilding stack at ${size.width}x${size.height}")
          val generation = ++restartGeneration
-@@ -3613,6 +3654,8 @@
+@@ -3613,6 +3657,8 @@
                  activeScreenStreamTypes.add(type)
              } else {
                  activeScreenStreamTypes.remove(type)
@@ -331,7 +343,7 @@ diff --git a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt b
              }
              if (type == SCREEN_TYPE_ALT) {
                  Log.i(ClusterMapPresentation.TAG, "cluster stream active=$active")
-@@ -3639,13 +3682,26 @@
+@@ -3639,13 +3685,26 @@
  
      private fun setConnectionStage(message: String) {
          latestStage = message
@@ -360,7 +372,7 @@ diff --git a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt b
      }
  
      private fun friendlyStage(message: String): String = when {
-@@ -3821,6 +3877,8 @@
+@@ -3821,6 +3880,8 @@
  /** Process-local hand-off for keeping the CarPlay session alive while no Activity is visible. */
  internal object CarPlayBackgroundSession {
      @Volatile var active = false
@@ -369,7 +381,7 @@ diff --git a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt b
      private var closingController: CarPlayController? = null
      @Synchronized fun beginClosing(candidate: CarPlayController?) { if (candidate != null) closingController = candidate }
      @Synchronized fun closed(candidate: CarPlayController?) { if (closingController === candidate) closingController = null }
-@@ -3892,6 +3950,8 @@
+@@ -3892,6 +3953,8 @@
          sink = null
          if (!keepOwner) { stopAction = null; owner = null }
          active = false
@@ -430,23 +442,25 @@ diff --git a/common/src/main/java/com/shilapi/xcertplay/CarPlayUiState.kt b/comm
 new file mode 100644
 --- /dev/null
 +++ b/common/src/main/java/com/shilapi/xcertplay/CarPlayUiState.kt
-@@ -0,0 +1,38 @@
+@@ -0,0 +1,40 @@
 +package com.shilapi.xcertplay
 +
 +/** Presentation gate; transport/session readiness alone never exposes the video. */
 +internal class CarPlayUiState {
++    private var acceptingFrames=false
 +    var generation=0; private set
 +    var decoderFrame=false; private set
 +    var textureFrame=false; private set
 +    var error: String?=null; private set
 +    var title="等待手机"; private set
 +    val firstFrameReceived get()=decoderFrame && textureFrame && error==null
-+    fun reset(next: Int, renderedBefore: Boolean=false) { generation=next;decoderFrame=renderedBefore;textureFrame=false;error=null;title="正在连接 iPhone" }
++    fun reset(next: Int, renderedBefore: Boolean=false) { generation=next;acceptingFrames=true;decoderFrame=renderedBefore;textureFrame=false;error=null;title="正在连接 iPhone" }
 +    fun stage(message: String) { if(error==null && !firstFrameReceived) title=ConnectionUiState.friendly(message) }
-+    fun decoded(current: Int) { if(current==generation) { decoderFrame=true;error=null } }
-+    fun textureUpdated(current: Int) { if(current==generation && decoderFrame) { textureFrame=true;error=null;title="CarPlay 已连接" } }
++    fun decoded(current: Int) { if(current==generation && acceptingFrames) { decoderFrame=true;error=null } }
++    fun textureUpdated(current: Int) { if(current==generation && acceptingFrames && decoderFrame) { textureFrame=true;error=null;title="CarPlay 已连接" } }
++    fun surfaceDetached() { textureFrame=false;if(error==null && acceptingFrames) title="正在启动 CarPlay，等待画面…" }
 +    fun timeout(current: Int) { if(current==generation && !firstFrameReceived) { error="未收到 CarPlay 画面，请重新连接";title="连接异常" } }
-+    fun disconnected(current: Int) { reset(current);title="等待连接" }
++    fun disconnected(current: Int) { reset(current);acceptingFrames=false;title="等待连接" }
 +}
 +internal object ConnectionUiState {
 +    fun friendly(raw: String): String = when {
@@ -553,7 +567,7 @@ diff --git a/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt b/comm
      }
  
      override fun onStop() {
-@@ -169,106 +203,131 @@
+@@ -169,106 +203,134 @@
          if (!initialLaunch && (page == "home" || page == "settings" || page == "connection")) render()
          if (initialLaunch) {
              initialLaunch = false
@@ -757,7 +771,10 @@ diff --git a/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt b/comm
 +            choice(card,"帧率",listOf("30 fps","60 fps"),if(AirPlayPersistence.loadFps(this)==60) 1 else 0) { AirPlayPersistence.saveFps(this,if(it==1) 60 else 30) }
 +            choice(card,"分辨率",listOf("100% · 默认","80%","60%"),when(AirPlayPersistence.loadDisplayScaleTenths(this)) { 8->1;6->2;else->0 }) { AirPlayPersistence.saveDisplayScaleTenths(this,listOf(10,8,6)[it]) }
 +        }
-+        section(content,"音频",R.drawable.ic_dp_display) { card -> mediaChannelControl(card);navigationChannelControl(card) }
++        section(content,"音频",R.drawable.ic_dp_display) { card ->
++            card.addView(CarPlayShell.label(this,"CarPlay 音频 · 使用现有播放设置",19f))
++            card.addView(CarPlayShell.button(this,"音频高级设置") { page="advanced";render() },matchButton(12,60))
++        }
 +        section(content,"系统",R.drawable.ic_dp_automation) { card ->
 +            toggle(card,"开机启动","由车机系统启动权限决定",AirPlayPersistence.loadAutoStartOnBoot(this)) { AirPlayPersistence.saveAutoStartOnBoot(this,it) }
 +            toggle(card,"保持屏幕唤醒","连接界面和投屏期间",getSharedPreferences("diplay",0).getBoolean("keep_screen_on",true)) { getSharedPreferences("diplay",0).edit().putBoolean("keep_screen_on",it).apply() }
@@ -769,7 +786,7 @@ diff --git a/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt b/comm
          content.addView(label(getString(R.string.your_drive_your_way), 34, TEXT, true))
          content.addView(label(getString(R.string.apply_reconnects_carplay_for_size_resolution_music_buffer), 17, MUTED).apply { setPadding(0, dp(8), 0, dp(24)) })
          section(content, getString(R.string.connection_setup), R.drawable.ic_dp_connection) { card ->
-@@ -528,58 +587,46 @@
+@@ -528,58 +590,46 @@
      }
  
  
@@ -864,7 +881,7 @@ diff --git a/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt b/comm
      }
      private fun showLiveNetwork(hotspot: Boolean) {
          Thread {
-@@ -943,13 +990,13 @@
+@@ -943,13 +993,13 @@
              CarPlayBackgroundSession.startBlocked() -> "等待重连 · 正在清理旧会话"
              com.shilapi.xcertplay.orchestration.PsaConnectionState.current() == "等待重连" -> "等待连接"
              setupError != null -> getString(R.string.setup_needs_attention)
@@ -881,7 +898,7 @@ diff --git a/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt b/comm
              disconnectButton?.visibility = if (running) View.VISIBLE else View.GONE
              disconnectButton?.isEnabled = true
              lastRunning = running
-@@ -1181,7 +1228,7 @@
+@@ -1181,7 +1231,7 @@
          }
          parent.addView(button, matchButton(0, 60)); parent.addView(space(12))
      }
@@ -890,7 +907,7 @@ diff --git a/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt b/comm
      private fun column() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(-1, -2) }
      private fun row() = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutParams = LinearLayout.LayoutParams(-1, -2) }
      private fun label(value: String, size: Int, color: Int, bold: Boolean = false) = TextView(this).apply {
-@@ -1192,7 +1239,7 @@
+@@ -1192,7 +1242,7 @@
      private fun button(title: String, primary: Boolean, click: () -> Unit) = Button(this).apply {
          text = title; isAllCaps = false; textSize = 18f; setTextColor(if (primary) BG else TEXT)
          typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
@@ -964,7 +981,7 @@ new file mode 100644
 +    @Test fun staleFrameCannotExposeNewSession() { val s=CarPlayUiState();s.reset(2);s.decoded(1);s.textureUpdated(1);assertFalse(s.firstFrameReceived) }
 +    @Test fun reattachedSessionWaitsForItsNewTexture() { val s=CarPlayUiState();s.reset(2,true);assertFalse(s.firstFrameReceived);s.textureUpdated(2);assertTrue(s.firstFrameReceived) }
 +    @Test fun timeoutLeavesActionableUi() { val s=CarPlayUiState();s.reset(1);s.timeout(1);assertFalse(s.firstFrameReceived);assertNotNull(s.error) }
-+    @Test fun disconnectImmediatelyClosesGate() { val s=CarPlayUiState();s.reset(1);s.decoded(1);s.textureUpdated(1);s.disconnected(1);assertFalse(s.firstFrameReceived) }
++    @Test fun disconnectImmediatelyClosesGate() { val s=CarPlayUiState();s.reset(1);s.decoded(1);s.textureUpdated(1);s.disconnected(1);s.surfaceDetached();s.decoded(1);s.textureUpdated(1);assertFalse(s.firstFrameReceived) }
 +}
 diff --git a/common/src/test/java/com/shilapi/xcertplay/HotspotModeMigrationTest.kt b/common/src/test/java/com/shilapi/xcertplay/HotspotModeMigrationTest.kt
 --- a/common/src/test/java/com/shilapi/xcertplay/HotspotModeMigrationTest.kt
