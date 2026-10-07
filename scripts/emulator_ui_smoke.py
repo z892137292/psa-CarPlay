@@ -66,6 +66,7 @@ adb('shell','am','force-stop',PKG);launch(None,cold=True)
 texts=check('auto-cold-launch','PSA CarPlay')
 assert any(t in texts for t in ['连接手机','取消连接']),'Automatic cold launch has no usable connection controls'
 adb('shell','am','force-stop',PKG);launch('settings',cold=True);check('settings','PSA CarPlay','首选连接方式')
+tap('系统')
 scroll_to('保持屏幕唤醒')
 check('settings-scrolled','PSA CarPlay','保持屏幕唤醒')
 # Stop automatic connection so the no-phone cold-start and each explicit retry are separate.
