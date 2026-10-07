@@ -53,7 +53,12 @@ jobs:
           cd upstream
           chmod +x gradlew
           ./gradlew :shared:testDebugUnitTest --tests "com.shilapi.xcertplay.orchestration.BoundPhoneSessionTest" --tests "com.shilapi.xcertplay.network.SoftApPolicyTest" --tests "com.shilapi.xcertplay.network.HandoffPolicyTest" --tests "com.shilapi.xcertplay.network.SessionHealthTest" --tests "com.shilapi.xcertplay.transport.HandoffEncodingTest" --tests "com.shilapi.xcertplay.airplay.SessionTerminalEventTest" --tests "com.shilapi.xcertplay.airplay.CarPlayMediaEngineTest" --tests "com.shilapi.xcertplay.airplay.PsaStandardCarPlayProfileTest" --tests "com.shilapi.xcertplay.network.ControlProbeSourceTest" --tests "com.shilapi.xcertplay.network.CarPlayBonjourTest" --tests "com.shilapi.xcertplay.network.LanPolicyTest" --tests "com.shilapi.xcertplay.network.LanNetworkSelectionTest" --tests "com.shilapi.xcertplay.network.LanMdnsTimingTest" --tests "com.shilapi.xcertplay.network.AirPlayPortSelectorTest" --tests "com.shilapi.xcertplay.orchestration.LanAttemptDiagnosticsTest" --tests "com.shilapi.xcertplay.transport.Iap2WiredControlClientTest" --tests "com.shilapi.xcertplay.transport.Iap2WirelessControlClientTest" --tests "com.shilapi.xcertplay.transport.UsbMuxIssue100RegressionTest" :common:testDebugUnitTest --tests "com.shilapi.xcertplay.SoftApLifecycleTest" --tests "com.shilapi.xcertplay.SystemHotspotManagerTest" --tests "com.shilapi.xcertplay.LanBonjourLifecycleTest" --tests "com.shilapi.xcertplay.LanNetworkManagerTest" --tests "com.shilapi.xcertplay.HotspotModeMigrationTest" --tests "com.shilapi.xcertplay.CarPlayHostDisplaySizeTest" --tests "com.shilapi.xcertplay.CarPlayHostPreparationTest" --tests "com.shilapi.xcertplay.ControllerCloseGateTest" --tests "com.shilapi.xcertplay.PsaReportStorageTest" --tests "com.shilapi.xcertplay.DiagnosticExportStoreTest" --tests "com.shilapi.xcertplay.DiagnosticRedactorTest" :mobile:assembleStandaloneDebug --stacktrace
-          ./gradlew :shared:lintDebug :common:lintDebug :mobile:lintDebug --continue --stacktrace
+          ./gradlew :shared:lintDebug :common:lintDebug :mobile:lintDebug --init-script ../scripts/lint-report-only.gradle --continue --stacktrace
+          cd "$RUNNER_TEMP/psa-baseline"
+          chmod +x gradlew
+          ./gradlew :shared:lintDebug :common:lintDebug :mobile:lintDebug --init-script "$GITHUB_WORKSPACE/scripts/lint-report-only.gradle" --continue --stacktrace
+          cd "$GITHUB_WORKSPACE"
+          python3 scripts/compare_lint_errors.py "$RUNNER_TEMP/psa-baseline" upstream > "$RUNNER_TEMP/PSA-LINT-COMPARISON.txt" || { cat "$RUNNER_TEMP/PSA-LINT-COMPARISON.txt"; exit 1; }
       - name: Verify package and stage deliverables
         run: |
           APK="$(find upstream/mobile/build/outputs/apk/debug -maxdepth 1 -name '*.apk' -type f | head -n 1)"
@@ -76,7 +81,12 @@ jobs:
             echo 'Baseline certificate unavailable; overwrite-install compatibility UNKNOWN.' > out/APK-COMPATIBILITY.txt
           fi
           cp SOFTAP-IMPLEMENTATION.md CHANGED-SOURCE-SOFTAP.txt patches/psa-0.2.12-to-softap.diff out/
-          cp "$RUNNER_TEMP/PSA-SOURCE-CHECK.txt" out/
+          cp "$RUNNER_TEMP/PSA-SOURCE-CHECK.txt" "$RUNNER_TEMP/PSA-LINT-COMPARISON.txt" out/
+          cp -r upstream/shared/build/reports/lint* out/
+          mkdir -p out/lint/common out/lint/mobile out/lint/baseline
+          cp upstream/common/build/reports/lint* out/lint/common/
+          cp upstream/mobile/build/reports/lint* out/lint/mobile/
+          for module in shared common mobile; do mkdir -p "out/lint/baseline/$module"; cp "$RUNNER_TEMP/psa-baseline/$module/build/reports/"lint* "out/lint/baseline/$module/"; done
           cp -r upstream/shared/build/test-results/testDebugUnitTest out/shared-test-results
           cp -r upstream/common/build/test-results/testDebugUnitTest out/common-test-results
           cd out
@@ -99,6 +109,10 @@ jobs:
             upstream/shared/build/reports/lint*
             upstream/common/build/reports/lint*
             upstream/mobile/build/reports/lint*
+            ${{ runner.temp }}/psa-baseline/shared/build/reports/lint*
+            ${{ runner.temp }}/psa-baseline/common/build/reports/lint*
+            ${{ runner.temp }}/psa-baseline/mobile/build/reports/lint*
+            ${{ runner.temp }}/PSA-LINT-COMPARISON.txt
           if-no-files-found: ignore
       - name: Remove temporary credentials
         if: always()

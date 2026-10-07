@@ -27,7 +27,7 @@ The bound object records bootstrap acceptance, Bluetooth identity, transport
 identifier, expected interface/address and AirPlay deviceID/sessionUUID. The
 existing protocol identifies the accessory to the phone; it does not provide
 a previously unknown phone serial number. This distinction is explicit rather
-than inventing an iPhone identification payload. TCP is provisional. Known AP
+than inventing an iPhone identification payload. TCP is provisional; compressed and scoped IPv6 representations compare by address bytes. Known AP
 neighbor addresses constrain peers when available. SETUP assigns one session
 owner; changed peer/device/session and conflicting tunnel transport identities
 are rejected. A deviceID matching another paired Bluetooth device is also rejected. A Wi-Fi MAC is not assumed to equal a Bluetooth MAC. Rejected or
@@ -58,15 +58,14 @@ ACS chooses a regulatory-supported channel rather than imposing an unsupported
 36/40/44/48 channel. Root startup waits for actual interface and IPv4; the
 live SSID/password must match the current request. DHCP is reported as system
 tethering evidence, with leases explicitly unverified. Neighbor IPs are not
-claimed to prove Bluetooth identity. Client count is unknown when no platform
-callback can supply it.
+claimed to prove Bluetooth identity. Client count uses legacy Handler or modern Executor callbacks; it is explicitly unknown when the ROM cannot supply it. Root metadata polling slows from two to ten seconds after proven projection; local interface/address and readable driver frequency checks still run at the existing fast monitor cadence.
 
 The Android backend owns a LocalOnlyHotspot reservation, attempts configurable
 5 GHz startup where the API is available, otherwise reads the real reservation.
 A 2.4 GHz or unknown channel fails explicitly; no fake channel/address and no
 Wi-Fi Direct fallback. Android 9 public LOHS cannot reliably select 5 GHz;
 root/privileged OEM APIs and live radio availability must be checked on-device.
-The existing JNI WEXT reader supplements iw. Some ROMs hide tethering methods or lack live radio readings. These report capability
+The existing JNI WEXT reader supplements iw, including root-side loading for restricted drivers. Some ROMs hide tethering methods or lack live radio readings. These report capability
 failure rather than pretending automatic CarPlay is working.
 
 AP credentials are created per generation. AirPlay and interface mDNS use
@@ -108,7 +107,7 @@ the scope check removes that exact line before byte comparison. Added tests cove
 generation replacement, AUTO/USB teardown gates, timeline and real AP policy.
 Existing wired encoding, USBMUX, AirPlay/type-130/media, terminal health, LAN,
 Bonjour, preparation visibility and controller close tests run in Actions.
-Actions also runs shared/common/mobile lint and builds the standalone APK with
+Actions runs full shared/common/mobile lint on both reconstructed revisions. Unfiltered XML/HTML reports are retained; a source-based comparison rejects every new error while reporting existing unrelated errors, instead of silently suppressing them or rewriting unrelated modules. It also builds the standalone APK with
 the existing explicit upstream runtime authentication input. No authentication
 files are committed. Local Gradle cannot download its distribution and has
 no Android SDK, so Actions is the executable build environment.

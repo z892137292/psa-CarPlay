@@ -1606,7 +1606,7 @@ index 85ca71d..a9e8fbe 100644
                  TAG,
 diff --git a/shared/src/main/java/com/shilapi/xcertplay/network/AndroidApiSoftApBackend.kt b/shared/src/main/java/com/shilapi/xcertplay/network/AndroidApiSoftApBackend.kt
 new file mode 100644
-index 0000000..4fb3380
+index 0000000..de840e6
 --- /dev/null
 +++ b/shared/src/main/java/com/shilapi/xcertplay/network/AndroidApiSoftApBackend.kt
 @@ -0,0 +1,91 @@
@@ -1653,20 +1653,20 @@ index 0000000..4fb3380
 +                    it.parameterTypes[0].name == "android.net.wifi.SoftApConfiguration"
 +            } else null
 +            if (method != null) {
-+                val builder = android.net.wifi.SoftApConfiguration.Builder()
++                val builder = Class.forName("android.net.wifi.SoftApConfiguration\$Builder").getConstructor().newInstance()
 +                val type=builder.javaClass
 +                type.getMethod("setSsid",String::class.java).invoke(builder,request.ssid)
 +                type.getMethod("setPassphrase",String::class.java,Int::class.javaPrimitiveType).invoke(builder,request.password,android.net.wifi.SoftApConfiguration.SECURITY_TYPE_WPA2_PSK)
 +                type.getMethod("setBand",Int::class.javaPrimitiveType).invoke(builder,android.net.wifi.SoftApConfiguration.BAND_5GHZ)
-+                method.invoke(wifi, builder.build(), java.util.concurrent.Executor { it.run() }, callback)
++                method.invoke(wifi, type.getMethod("build").invoke(builder), java.util.concurrent.Executor { it.run() }, callback)
 +            } else wifi.startLocalOnlyHotspot(callback, Handler(Looper.getMainLooper()))
 +            if (!ready.await(timeoutMillis, TimeUnit.MILLISECONDS)) throw IOException("LOCAL_ONLY_HOTSPOT_TIMEOUT")
 +            failure?.let { throw IOException(it) }
 +            val r = reservation ?: throw IOException("LOCAL_ONLY_HOTSPOT_STOPPED")
 +            val legacy = if (Build.VERSION.SDK_INT < 30) r.wifiConfiguration else null
 +            val modern = if (Build.VERSION.SDK_INT >= 30) r.softApConfiguration else null
-+            val ssid = modern?.ssid ?: legacy?.SSID?.trim('"') ?: throw IOException("SOFTAP_SSID_UNAVAILABLE")
-+            val password = modern?.passphrase ?: legacy?.preSharedKey?.trim('"') ?: throw IOException("SOFTAP_PASSWORD_UNAVAILABLE")
++            val ssid = modern?.let { it.javaClass.getMethod("getSsid").invoke(it) as? String } ?: legacy?.SSID?.trim('"') ?: throw IOException("SOFTAP_SSID_UNAVAILABLE")
++            val password = modern?.let { it.javaClass.getMethod("getPassphrase").invoke(it) as? String } ?: legacy?.preSharedKey?.trim('"') ?: throw IOException("SOFTAP_PASSWORD_UNAVAILABLE")
 +            radio.start()
 +            val band=if(modern!=null) runCatching { (modern.javaClass.getMethod("getBand").invoke(modern) as Number).toInt() }.getOrDefault(0)
 +                else runCatching { legacy!!.javaClass.getField("apBand").getInt(legacy) }.getOrDefault(-1).let { if(it==1) 2 else 1 }
@@ -1738,10 +1738,10 @@ index c340479..6b8208a 100644
  /** The live Wi-Fi credentials and interface details for one existing CarPlay LAN. */
 diff --git a/shared/src/main/java/com/shilapi/xcertplay/network/LegacyHotspotRadio.kt b/shared/src/main/java/com/shilapi/xcertplay/network/LegacyHotspotRadio.kt
 new file mode 100644
-index 0000000..9b7687e
+index 0000000..cfa27c5
 --- /dev/null
 +++ b/shared/src/main/java/com/shilapi/xcertplay/network/LegacyHotspotRadio.kt
-@@ -0,0 +1,51 @@
+@@ -0,0 +1,60 @@
 +package com.shilapi.xcertplay.network
 +
 +/** Read-only, ordinary-UID fallback for drivers with Wireless Extensions (not an AP setter). */
@@ -1790,7 +1790,16 @@ index 0000000..9b7687e
 +}
 +
 +private object LegacyHotspotNative {
-+    init { System.loadLibrary("local_hotspot_radio") }
++    init {
++        val apk=System.getProperty("psa.softap.root.apk")
++        val directory=System.getProperty("psa.softap.root.nativeDir")
++        if(apk==null) System.loadLibrary("local_hotspot_radio")
++        else {
++            val extracted=directory?.let { java.io.File(it,"liblocal_hotspot_radio.so") }
++            System.load(if(extracted?.isFile==true) extracted.absolutePath
++                else "$apk!/lib/${android.os.Build.SUPPORTED_ABIS.first()}/liblocal_hotspot_radio.so")
++        }
++    }
 +    external fun query(interfaceName: String): IntArray
 +}
 diff --git a/shared/src/main/java/com/shilapi/xcertplay/network/LocalOnlyHotspotRadioInfo.kt b/shared/src/main/java/com/shilapi/xcertplay/network/LocalOnlyHotspotRadioInfo.kt
@@ -1926,10 +1935,10 @@ index 0000000..c08c704
 +}
 diff --git a/shared/src/main/java/com/shilapi/xcertplay/network/RootSoftApBackend.kt b/shared/src/main/java/com/shilapi/xcertplay/network/RootSoftApBackend.kt
 new file mode 100644
-index 0000000..90fabd5
+index 0000000..9e8bd3b
 --- /dev/null
 +++ b/shared/src/main/java/com/shilapi/xcertplay/network/RootSoftApBackend.kt
-@@ -0,0 +1,111 @@
+@@ -0,0 +1,119 @@
 +package com.shilapi.xcertplay.network
 +
 +import android.content.Context
@@ -1967,10 +1976,15 @@ index 0000000..90fabd5
 +    @Volatile private var owned = false
 +    private var request: SoftApRequest? = null
 +    private var attached: LanNetworkInfo? = null
++    private var cached: SoftApSnapshot? = null
++    private var sampledAt=0L
++    @Volatile private var sampleIntervalNanos=2_000_000_000L
++    override fun onSessionActive() { sampleIntervalNanos=10_000_000_000L }
 +    private fun command(action: String, args: List<String> = emptyList()): String {
 +        val root = shell.run("id -u").trim()
 +        if (root != "0") throw IOException("ROOT_UNAVAILABLE uid=$root")
-+        val cmd = "CLASSPATH=${SoftApRootShell.quote(context.applicationInfo.sourceDir)} app_process /system/bin " +
++        val cmd = "PSA_SOFTAP_APK=${SoftApRootShell.quote(context.applicationInfo.sourceDir)} " +
++            "PSA_SOFTAP_NATIVE_DIR=${SoftApRootShell.quote(context.applicationInfo.nativeLibraryDir)} CLASSPATH=${SoftApRootShell.quote(context.applicationInfo.sourceDir)} app_process /system/bin " +
 +            "com.shilapi.xcertplay.network.RootSoftApMain " + (listOf(action) + args).joinToString(" ") { SoftApRootShell.quote(it) }
 +        return shell.run(cmd)
 +    }
@@ -1993,7 +2007,7 @@ index 0000000..90fabd5
 +        while (!closed && System.nanoTime() < deadline) {
 +            val json = read()
 +            if (json.optBoolean("enabled") && json.optJSONArray("interfaces")?.length() == 1) {
-+                try { return SoftApPolicy.verify(parse(json)).also { attached=it.network } }
++                try { return SoftApPolicy.verify(parse(json)).also { attached=it.network; cached=it; sampledAt=System.nanoTime() } }
 +                catch(e: IllegalArgumentException) { if(e.message!="SOFTAP_5GHZ_UNVERIFIED") throw e }
 +            }
 +            Thread.sleep(200)
@@ -2021,11 +2035,14 @@ index 0000000..90fabd5
 +        val old=attached ?: throw IOException("SOFTAP_NOT_STARTED")
 +        val iface=java.net.NetworkInterface.getByName(old.interfaceName)
 +        if(closed || iface?.isUp!=true || old.hostAddresses.any { it !in iface.inetAddresses.toList() }) throw IOException("SOFTAP_NETWORK_LOST")
++        val measured=LegacyHotspotRadio.read(iface.name,"5 GHz").frequencyMHz
++        if(measured!=null && measured!=old.frequencyMHz) throw IOException("SOFTAP_RADIO_CHANGED")
++        if(System.nanoTime()-sampledAt<sampleIntervalNanos) cached?.let { return it }
 +        val json=read()
 +        if(!json.optBoolean("enabled")) throw IOException("SOFTAP_NETWORK_LOST")
 +        val result = SoftApPolicy.verify(parse(json))
 +        attached?.let { old -> if (old.interfaceName != result.network.interfaceName || old.hostAddresses.toSet() != result.network.hostAddresses.toSet() || old.frequencyMHz != result.network.frequencyMHz || old.bssid != result.network.bssid) throw IOException("SOFTAP_INTERFACE_CHANGED") }
-+        return result
++        return result.also { cached=it; sampledAt=System.nanoTime() }
 +    }
 +    override fun close() {
 +        closed = true
@@ -2043,10 +2060,10 @@ index 0000000..90fabd5
 +}
 diff --git a/shared/src/main/java/com/shilapi/xcertplay/network/RootSoftApMain.kt b/shared/src/main/java/com/shilapi/xcertplay/network/RootSoftApMain.kt
 new file mode 100644
-index 0000000..ae115da
+index 0000000..0a1b53b
 --- /dev/null
 +++ b/shared/src/main/java/com/shilapi/xcertplay/network/RootSoftApMain.kt
-@@ -0,0 +1,150 @@
+@@ -0,0 +1,163 @@
 +package com.shilapi.xcertplay.network
 +
 +import android.content.Context
@@ -2065,8 +2082,12 @@ index 0000000..ae115da
 +
 +/** APK entry point executed as uid 0 by app_process; no Binder transaction numbers. */
 +object RootSoftApMain {
++    // This entry point runs as uid 0 in system app_process, not under the application hidden-API policy.
++    @android.annotation.SuppressLint("SoonBlockedPrivateApi")
 +    @JvmStatic fun main(args: Array<String>) {
 +        try {
++            System.getenv("PSA_SOFTAP_APK")?.let { System.setProperty("psa.softap.root.apk",it) }
++            System.getenv("PSA_SOFTAP_NATIVE_DIR")?.let { System.setProperty("psa.softap.root.nativeDir",it) }
 +            if (Looper.myLooper() == null) Looper.prepareMainLooper()
 +            val activityThread = Class.forName("android.app.ActivityThread")
 +            val thread = activityThread.getMethod("systemMain").invoke(null)
@@ -2077,11 +2098,11 @@ index 0000000..ae115da
 +                "start" -> {
 +                    require(args.size == 3)
 +                    if (Build.VERSION.SDK_INT >= 30) {
-+                        val builder=android.net.wifi.SoftApConfiguration.Builder()
++                        val builder=Class.forName("android.net.wifi.SoftApConfiguration\$Builder").getConstructor().newInstance()
 +                        call(builder,"setSsid",args[1])
 +                        call(builder,"setPassphrase",args[2],android.net.wifi.SoftApConfiguration.SECURITY_TYPE_WPA2_PSK)
 +                        call(builder,"setBand",android.net.wifi.SoftApConfiguration.BAND_5GHZ)
-+                        val config=builder.build()
++                        val config=call(builder,"build")!!
 +                        check(call(wifi,"setSoftApConfiguration",config) != false) { "CONFIGURATION_REJECTED" }
 +                    } else {
 +                        val config = WifiConfiguration().apply {
@@ -2127,7 +2148,8 @@ index 0000000..ae115da
 +            }
 +        } catch (e: Throwable) {
 +            // Credentials are never echoed, including invocation exceptions.
-+            println("SOFTAP_JSON=" + JSONObject().put("error",if(e is java.io.IOException) e.message else e.cause?.javaClass?.simpleName ?: e.javaClass.simpleName))
++            println("SOFTAP_JSON=" + JSONObject().put("error",if(e is java.io.IOException) e.message else (e.cause ?: e).let { cause -> cause.javaClass.simpleName +
++                if(cause is NoSuchMethodException) ":${cause.message}" else "" }))
 +        }
 +        kotlin.system.exitProcess(0)
 +    }
@@ -2149,9 +2171,9 @@ index 0000000..ae115da
 +            out.put("band",if(c is WifiConfiguration) { if(c.javaClass.getField("apBand").getInt(c)==1) "5 GHz" else "2.4 GHz" } else if((call(c,"getBand") as Number).toInt()==2) "5 GHz" else "unknown")
 +            // Report only a live radio frequency. Configured channel/ACS is separate evidence.
 +            out.put("configuredChannel",if(c is WifiConfiguration) c.javaClass.getField("apChannel").getInt(c) else call(c,"getChannel"))
-+            var frequency = 0
-+            var clients: Int? = null
-+            if (Build.VERSION.SDK_INT >= 30) runCatching {
++            val observedFrequency=java.util.concurrent.atomic.AtomicInteger()
++            val observedClients=java.util.concurrent.atomic.AtomicInteger(-1)
++            runCatching {
 +                val type = Class.forName("android.net.wifi.WifiManager\$SoftApCallback")
 +                val observer = Proxy.newProxyInstance(type.classLoader,arrayOf(type)) { self,m,a ->
 +                    when(m.name) {
@@ -2159,18 +2181,25 @@ index 0000000..ae115da
 +                        "equals" -> self === a?.firstOrNull()
 +                        "onInfoChanged" -> {
 +                            val infos = (a?.firstOrNull() as? List<*>) ?: listOfNotNull(a?.firstOrNull())
-+                            if(infos.size==1) frequency=(call(infos.single()!!,"getFrequency") as Number).toInt()
++                            if(infos.size==1) observedFrequency.set((call(infos.single()!!,"getFrequency") as Number).toInt())
 +                            null
 +                        }
-+                        "onConnectedClientsChanged" -> { clients=(a?.lastOrNull() as? List<*>)?.size; null }
-+                        "onNumClientsChanged" -> { clients=(a?.firstOrNull() as? Number)?.toInt(); null }
++                        "onConnectedClientsChanged" -> { observedClients.set((a?.lastOrNull() as? List<*>)?.size ?: -1); null }
++                        "onNumClientsChanged" -> { observedClients.set((a?.firstOrNull() as? Number)?.toInt() ?: -1); null }
 +                        else -> null
 +                    }
 +                }
-+                wifi.javaClass.getMethod("registerSoftApCallback",Executor::class.java,type).invoke(wifi,Executor { it.run() },observer)
-+                Thread.sleep(200)
-+                wifi.javaClass.getMethod("unregisterSoftApCallback",type).invoke(wifi,observer)
++                val add=wifi.javaClass.methods.first { it.name=="registerSoftApCallback" && it.parameterTypes.size==2 }
++                val callbackThread=android.os.HandlerThread("root-softap-info").apply { start() }
++                try {
++                    if(add.parameterTypes.first()==Executor::class.java) add.invoke(wifi,Executor { it.run() },observer)
++                    else add.invoke(wifi,observer,android.os.Handler(callbackThread.looper))
++                    Thread.sleep(200)
++                    wifi.javaClass.getMethod("unregisterSoftApCallback",type).invoke(wifi,observer)
++                } finally { callbackThread.quitSafely() }
 +            }
++            var frequency=observedFrequency.get()
++            val clients=observedClients.get().takeIf { it>=0 }
 +            val tethered = (call(if(Build.VERSION.SDK_INT>=30) context.getSystemService("tethering")!! else cm,"getTetheredIfaces") as Array<*>).filterIsInstance<String>()
 +            val links = JSONArray()
 +            val ips = mutableSetOf<String>()
@@ -2180,6 +2209,7 @@ index 0000000..ae115da
 +                if(!i.isUp || i.inetAddresses.toList().none { it is java.net.Inet4Address }) continue
 +                val info = command(listOf("iw","dev",name,"info"))
 +                if(!Regex("(?m)^\\s*type AP\\s*$").containsMatchIn(info) && !name.matches(Regex("(?i)(wlan|ap|swlan|wifi)[0-9]+|.*softap.*"))) continue
++                if(frequency==0) frequency=LegacyHotspotRadio.read(name,out.optString("band")).frequencyMHz ?: 0
 +                if(frequency==0) frequency=Regex("channel \\d+ \\((\\d+) MHz\\)").find(info)?.groupValues?.get(1)?.toIntOrNull() ?: 0
 +                links.put(JSONObject().put("name",name).put("mac",i.hardwareAddress?.joinToString(":") { "%02x".format(it.toInt() and 255) }))
 +                command(listOf("ip","neigh","show","dev",name)).lineSequence().forEach { line ->
@@ -2199,10 +2229,10 @@ index 0000000..ae115da
 +}
 diff --git a/shared/src/main/java/com/shilapi/xcertplay/network/SessionSoftApManager.kt b/shared/src/main/java/com/shilapi/xcertplay/network/SessionSoftApManager.kt
 new file mode 100644
-index 0000000..9a6a647
+index 0000000..a65ca5b
 --- /dev/null
 +++ b/shared/src/main/java/com/shilapi/xcertplay/network/SessionSoftApManager.kt
-@@ -0,0 +1,42 @@
+@@ -0,0 +1,43 @@
 +package com.shilapi.xcertplay.network
 +
 +import android.content.Context
@@ -2241,16 +2271,17 @@ index 0000000..9a6a647
 +        }
 +        throw IOException("SOFTAP_START_FAILED ${failures.joinToString("; ")}")
 +    }
++    override fun onCarPlayConfirmed() { backend?.onSessionActive() }
 +    override fun validateReady() { live=backend?.snapshot() ?: throw IOException("SOFTAP_NETWORK_LOST") }
 +    override fun connectionDiagnosticSnapshot() = "softApBackend=${backend?.name} state=${if(closed) "CLOSED" else "READY"} dhcp=${live?.dhcpState} clients=${live?.clientCount ?: "unknown"} clientIps=${live?.clientIps}"
 +    override fun close() { closed=true; backend?.close(); backend=null; live=null }
 +}
 diff --git a/shared/src/main/java/com/shilapi/xcertplay/network/SoftApBackend.kt b/shared/src/main/java/com/shilapi/xcertplay/network/SoftApBackend.kt
 new file mode 100644
-index 0000000..082415b
+index 0000000..c211859
 --- /dev/null
 +++ b/shared/src/main/java/com/shilapi/xcertplay/network/SoftApBackend.kt
-@@ -0,0 +1,27 @@
+@@ -0,0 +1,28 @@
 +package com.shilapi.xcertplay.network
 +
 +import java.io.Closeable
@@ -2265,6 +2296,7 @@ index 0000000..082415b
 +interface SoftApBackend : Closeable {
 +    val name: String
 +    fun start(request: SoftApRequest, timeoutMillis: Long): SoftApSnapshot
++    fun onSessionActive() {}
 +    fun snapshot(): SoftApSnapshot
 +}
 +
@@ -2408,7 +2440,7 @@ index 0000000..5a1fce7
 +    fun elapsedMillis() = (now()-started)/1_000_000
 +}
 diff --git a/shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt b/shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt
-index c9e932e..4b0797e 100644
+index c9e932e..e30e231 100644
 --- a/shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt
 +++ b/shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt
 @@ -102,6 +102,7 @@ sealed class CarPlayStatus {
@@ -2959,7 +2991,7 @@ index c9e932e..4b0797e 100644
 +        debugLog("WIRELESS_AP_DIAG generationId=${phone.generationId} boundPhone=${phone.bluetoothDeviceName} bluetoothAddress=${phone.bluetoothAddress} " +
 +            "iap2Identity=${phone.iap2Identification} transportIdentifier=${phone.transportIdentifier} softApState=${timeline?.state} " +
 +            "softApInterface=${n?.interfaceName} softApSsid=${n?.ssid} softApSecurity=${n?.security} softApChannel=${n?.channel} softApFrequency=${n?.frequencyMHz} " +
-+            "softApIpv4=$v4 softApIpv6=$v6 softApDhcp=${ap?.dhcpState} softApClients=${ap?.clientCount ?: "unknown"} iphoneClientIp=${ap?.clientIps} " +
++            "softApIpv4=$v4 softApIpv6=$v6 softApDhcp=${ap?.dhcpState} softApClients=${ap?.clientCount ?: "unknown"} iphoneClientIp=${phone.airPlayPeerAddress ?: ap?.clientIps} " +
 +            "airplayBindInterface=${phone.expectedNetworkInterface} airplayBindIpv4=$v4 airplayBindIpv6=$v6 airplayPort=7000 " +
 +            "bonjourInterface=${phone.expectedNetworkInterface} bonjourA=$v4 bonjourAAAA=$v6 firstTcpPeer=${peer?.hostAddress ?: phone.airPlayPeerAddress} " +
 +            "firstTcpFamily=${(peer ?: firstTcpPeer)?.let { if(it is Inet6Address) "IPv6" else "IPv4" }} firstTcpElapsedMs=$firstTcpElapsedMs " +
