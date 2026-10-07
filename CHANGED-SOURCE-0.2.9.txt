@@ -1,0 +1,23 @@
+Protected runtime files unchanged: 93
+Changed source files relative to reconstructed 0.2.8:
+common/src/main/AndroidManifest.xml
+common/src/main/java/com/shilapi/xcertplay/BootReceiver.kt
+common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
+common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
+common/src/main/java/com/shilapi/xcertplay/DiagnosticExportStore.kt
+common/src/main/java/com/shilapi/xcertplay/DiagnosticRedactor.kt
+common/src/main/java/com/shilapi/xcertplay/PsaDirectSafety.kt
+common/src/main/java/com/shilapi/xcertplay/PsaDirectService.kt
+common/src/main/java/com/shilapi/xcertplay/SessionLogFile.kt
+common/src/test/java/com/shilapi/xcertplay/CarPlayHostDisplaySizeTest.kt
+common/src/test/java/com/shilapi/xcertplay/ControllerCloseGateTest.kt
+common/src/test/java/com/shilapi/xcertplay/DiagnosticExportStoreTest.kt
+common/src/test/java/com/shilapi/xcertplay/DiagnosticRedactorTest.kt
+common/src/test/java/com/shilapi/xcertplay/PsaReportStorageTest.kt
+mobile/build.gradle.kts
+shared/src/main/java/com/shilapi/xcertplay/network/DirectLifecycle.kt
+shared/src/main/java/com/shilapi/xcertplay/network/LegacyWifiP2pGroupManager.kt
+shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt
+shared/src/main/java/com/shilapi/xcertplay/orchestration/DirectTestStage.kt
+shared/src/test/java/com/shilapi/xcertplay/network/DirectLifecycleTest.kt
+shared/src/test/java/com/shilapi/xcertplay/orchestration/DirectTestStageTest.kt
