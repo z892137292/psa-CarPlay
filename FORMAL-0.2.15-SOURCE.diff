@@ -93,10 +93,28 @@ index f91a557..dcbd332 100644
  
      private fun friendlyStage(message: String): String = when {
 diff --git a/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt b/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
-index ddd49a7..97c4fc7 100644
+index ddd49a7..4b469a4 100644
 --- a/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
 +++ b/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
-@@ -192,6 +192,7 @@ class DiPlayActivity : ComponentActivity() {
+@@ -49,6 +49,7 @@ import kotlin.math.roundToInt
+ class DiPlayActivity : ComponentActivity() {
+     private val handler = Handler(Looper.getMainLooper())
+     private var page = "home"
++    private var homeDesignScale = 1f
+     private var setupError: String? = null
+     private var status: TextView? = null
+     private var connectButton: Button? = null
+@@ -168,6 +169,9 @@ class DiPlayActivity : ComponentActivity() {
+     override fun onPause() { handler.removeCallbacks(tick); super.onPause() }
+ 
+     private fun render() {
++        val config = resources.configuration
++        homeDesignScale = if (page == "home" && PsaHomeLayout.compact(config.screenWidthDp, config.screenHeightDp))
++            (config.screenHeightDp / 720f).coerceAtMost(1f) else 1f
+         status = null; connectButton = null; disconnectButton = null; lastRunning = null
+         val scroll = ScrollView(this).apply { setBackgroundColor(BG); isFillViewport = true; clipToPadding = false }
+         val content = column().apply { setPadding(dp(32), dp(24), dp(32), dp(32)) }
+@@ -192,6 +196,7 @@ class DiPlayActivity : ComponentActivity() {
      }
  
      private fun home(content: LinearLayout) {
@@ -104,7 +122,7 @@ index ddd49a7..97c4fc7 100644
          content.addView(button("详细连接状态 / USB口校准", false) { startActivity(Intent(this, PsaStatusActivity::class.java)) }, matchButton())
          val wide = resources.configuration.screenWidthDp >= 850
          val body = column()
-@@ -258,6 +259,43 @@ class DiPlayActivity : ComponentActivity() {
+@@ -258,6 +263,43 @@ class DiPlayActivity : ComponentActivity() {
          content.addView(body)
      }
  
@@ -148,9 +166,33 @@ index ddd49a7..97c4fc7 100644
      private fun settings(content: LinearLayout) {
          content.addView(label(getString(R.string.your_drive_your_way), 34, TEXT, true))
          content.addView(label(getString(R.string.apply_reconnects_carplay_for_size_resolution_music_buffer), 17, MUTED).apply { setPadding(0, dp(8), 0, dp(24)) })
+@@ -1182,12 +1224,12 @@ class DiPlayActivity : ComponentActivity() {
+     private fun column() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(-1, -2) }
+     private fun row() = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutParams = LinearLayout.LayoutParams(-1, -2) }
+     private fun label(value: String, size: Int, color: Int, bold: Boolean = false) = TextView(this).apply {
+-        text = value; textSize = size.toFloat(); setTextColor(color); gravity = Gravity.CENTER_VERTICAL
++        text = value; textSize = size.toFloat() * homeDesignScale; setTextColor(color); gravity = Gravity.CENTER_VERTICAL
+         typeface = if (bold) Typeface.create("sans-serif-medium", Typeface.NORMAL) else Typeface.create("sans-serif", Typeface.NORMAL)
+         setLineSpacing(dp(3).toFloat(), 1f)
+     }
+     private fun button(title: String, primary: Boolean, click: () -> Unit) = Button(this).apply {
+-        text = title; isAllCaps = false; textSize = 18f; setTextColor(if (primary) BG else TEXT)
++        text = title; isAllCaps = false; textSize = 18f * homeDesignScale; setTextColor(if (primary) BG else TEXT)
+         typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+         background = android.graphics.drawable.RippleDrawable(ColorStateList.valueOf(0x336F9FD9), rounded(if (primary) ACCENT else SURFACE, if (primary) ACCENT else BORDER), null)
+         setPadding(dp(16), 0, dp(16), 0); minHeight = dp(56); stateListAnimator = null
+@@ -1196,7 +1238,7 @@ class DiPlayActivity : ComponentActivity() {
+     private fun rounded(color: Int, stroke: Int) = GradientDrawable().apply { setColor(color); cornerRadius = dp(20).toFloat(); setStroke(dp(1), stroke) }
+     private fun matchButton(top: Int = 0, height: Int = 68) = LinearLayout.LayoutParams(-1, dp(height)).apply { topMargin = dp(top) }
+     private fun space(height: Int) = View(this).apply { layoutParams = LinearLayout.LayoutParams(1, dp(height)) }
+-    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
++    private fun dp(value: Int) = (value * resources.displayMetrics.density * homeDesignScale).toInt()
+     companion object {
+         private val BG = Color.rgb(12, 17, 27)
+         private val SURFACE = Color.rgb(21, 30, 44)
 diff --git a/common/src/main/java/com/shilapi/xcertplay/PsaHomeLayout.kt b/common/src/main/java/com/shilapi/xcertplay/PsaHomeLayout.kt
 new file mode 100644
-index 0000000..7814389
+index 0000000..e3e1f96
 --- /dev/null
 +++ b/common/src/main/java/com/shilapi/xcertplay/PsaHomeLayout.kt
 @@ -0,0 +1,6 @@
@@ -158,7 +200,7 @@ index 0000000..7814389
 +
 +/** Short, wide head units use a single row of connection cards. */
 +object PsaHomeLayout {
-+    fun compact(widthDp: Int, heightDp: Int): Boolean = widthDp >= 960 && heightDp > 0 && widthDp.toFloat() / heightDp >= 2.4f
++    fun compact(widthDp: Int, heightDp: Int): Boolean = widthDp >= 600 && heightDp > 0 && widthDp.toFloat() / heightDp >= 2.4f
 +}
 diff --git a/common/src/main/res/values-ar/strings.xml b/common/src/main/res/values-ar/strings.xml
 index 5b2e324..c5bd269 100644
@@ -421,10 +463,10 @@ index eb9a64d..3cdde14 100644
      }
 diff --git a/common/src/test/java/com/shilapi/xcertplay/PsaWideHomeTest.kt b/common/src/test/java/com/shilapi/xcertplay/PsaWideHomeTest.kt
 new file mode 100644
-index 0000000..8da3dca
+index 0000000..55cf578
 --- /dev/null
 +++ b/common/src/test/java/com/shilapi/xcertplay/PsaWideHomeTest.kt
-@@ -0,0 +1,31 @@
+@@ -0,0 +1,35 @@
 +package com.shilapi.xcertplay
 +
 +import android.view.View
@@ -440,7 +482,11 @@ index 0000000..8da3dca
 +@RunWith(RobolectricTestRunner::class)
 +@Config(sdk = [28], qualifiers = "w1920dp-h720dp-land-mdpi")
 +class PsaWideHomeTest {
-+    @Test fun requiredHomeActionsFit1920By720() {
++    @Test fun requiredHomeActionsFit1920By720() = checkHome()
++    @Test @Config(qualifiers = "w1280dp-h480dp-land-hdpi") fun actionsFitAt240Dpi() = checkHome()
++    @Test @Config(qualifiers = "w960dp-h360dp-land-xhdpi") fun actionsFitAt320Dpi() = checkHome()
++
++    private fun checkHome() {
 +        val activity = Robolectric.buildActivity(DiPlayActivity::class.java).get()
 +        DiPlayActivity::class.java.getDeclaredMethod("render").apply { isAccessible = true }.invoke(activity)
 +        val root = activity.findViewById<ViewGroup>(android.R.id.content)

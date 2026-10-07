@@ -1,7 +1,5 @@
 name: PSA 0.2.15 formal cleanup and full regression
 on:
-  pull_request:
-    branches: [main]
   push:
     branches: [cleanup/psa-formal]
   workflow_dispatch:
