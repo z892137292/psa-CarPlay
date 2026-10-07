@@ -360,7 +360,7 @@
          if (text == null || !text.matches(Regex("(?i)[0-9a-f]{2}(:[0-9a-f]{2}){5}"))) return null
 --- /dev/null
 +++ b/shared/src/main/java/com/shilapi/xcertplay/network/NetworkIdentityResolver.kt
-@@ -0,0 +1,47 @@
+@@ -0,0 +1,63 @@
 +package com.shilapi.xcertplay.network
 +
 +import android.Manifest
@@ -374,16 +374,32 @@
 +import android.net.wifi.WifiManager
 +import android.os.Build
 +
++enum class NetworkInterfaceRole { STA, AP, P2P, USB_NCM, TUN, UNKNOWN }
++
++/** Role derives from OS transport/tethering evidence; a wlan name alone has no role. */
++fun classifyNetworkInterface(wifiStation: Boolean, vpn: Boolean, tethered: Boolean,
++    verifiedP2p: Boolean=false, verifiedUsbNcm: Boolean=false): NetworkInterfaceRole = when {
++    vpn -> NetworkInterfaceRole.TUN
++    verifiedUsbNcm -> NetworkInterfaceRole.USB_NCM
++    verifiedP2p -> NetworkInterfaceRole.P2P
++    tethered -> NetworkInterfaceRole.AP
++    wifiStation -> NetworkInterfaceRole.STA
++    else -> NetworkInterfaceRole.UNKNOWN
++}
++
 +/** Read-only identity of an OS Wi-Fi station Network; never uses AP configuration as STA identity. */
 +class NetworkIdentityResolver(private val context: Context) {
 +    data class Identity(val network: Network?, val interfaceName: String?, val info: WifiInfo?,
 +        val rawSsid: String?, val ssid: String?, val reason: String, val locationEnabled: Boolean,
 +        val finePermission: Boolean, val coarsePermission: Boolean, val nearbyPermission: Boolean) {
-+        fun diagnostic() = "staInterface=$interfaceName staSsidRaw=$rawSsid staSsidNormalized=$ssid staBssid=${info?.bssid} staFrequency=${info?.frequency} staRssi=${info?.rssi} linkSpeed=${info?.linkSpeed} networkId=${info?.networkId} ssidPermission=$finePermission coarsePermission=$coarsePermission locationEnabled=$locationEnabled nearbyWifiPermission=$nearbyPermission ssidStatus=$reason"
++        fun diagnostic() = "role=${if(network!=null && interfaceName!=null) NetworkInterfaceRole.STA else NetworkInterfaceRole.UNKNOWN} staInterface=$interfaceName staSsidRaw=$rawSsid staSsidNormalized=$ssid staBssid=${info?.bssid} staFrequency=${info?.frequency} staRssi=${info?.rssi} linkSpeed=${info?.linkSpeed} networkId=${info?.networkId} ssidPermission=$finePermission coarsePermission=$coarsePermission locationEnabled=$locationEnabled nearbyWifiPermission=$nearbyPermission ssidStatus=$reason"
 +    }
 +    fun resolve(network: Network? = null): Identity {
 +        val cm=context.getSystemService(ConnectivityManager::class.java)
-+        val chosen=network ?: cm?.allNetworks?.firstOrNull { n -> cm.getNetworkCapabilities(n)?.let { it.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) && !it.hasTransport(NetworkCapabilities.TRANSPORT_VPN) } == true }
++        fun station(n: Network)=cm?.getNetworkCapabilities(n)?.let { it.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) && !it.hasTransport(NetworkCapabilities.TRANSPORT_VPN) }==true
++        val candidates=cm?.allNetworks.orEmpty().filter(::station)
++        val physicalLinks=candidates.mapNotNull { cm?.getLinkProperties(it)?.interfaceName }.distinct()
++        val chosen=network ?: cm?.activeNetwork?.takeIf(::station) ?: candidates.firstOrNull().takeIf { physicalLinks.size==1 }
 +        val caps=chosen?.let { cm?.getNetworkCapabilities(it) }
 +        val station=caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)==true && !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
 +        val name=if(station) chosen?.let { cm?.getLinkProperties(it)?.interfaceName } else null

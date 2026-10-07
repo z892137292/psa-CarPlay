@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Installed APK checks with no iPhone; never inject a fake connection/first frame."""
-import subprocess,time,re,xml.etree.ElementTree as E,json,atexit
+import subprocess,time,re,xml.etree.ElementTree as E,json,atexit,struct
 from pathlib import Path
 OUT=Path('out/emulator-ui');OUT.mkdir(parents=True,exist_ok=True)
 PKG='com.psa.carplay.dev'
@@ -36,6 +36,9 @@ def check(name,*required):
  root=dump();texts=[n.get('text','') for n in root.iter('node')]
  adb('shell','screencap','-p','/sdcard/psa-ui.png');adb('pull','/sdcard/psa-ui.png',str(OUT/(name+'.png')))
  (OUT/(name+'.xml')).write_text(E.tostring(root,encoding='unicode'))
+ if name in {'cold-home','phones','connection','settings-1920','diagnostics','connecting-no-phone','network-not-ready'}:
+  dimensions=struct.unpack('>II',(OUT/(name+'.png')).read_bytes()[16:24])
+  assert dimensions==(1920,720),(name,'actual screenshot dimensions',dimensions)
  for text in required:assert any(text in s for s in texts),(name,text,texts)
  return texts
 def scroll_to(text):
