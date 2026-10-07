@@ -510,7 +510,7 @@
      }
      private val locationPermission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
          if (hasPreciseLocation()) return@registerForActivityResult reconnectForLocation()
-@@ -92,7 +108,7 @@
+@@ -92,26 +108,51 @@
  
      override fun onCreate(savedInstanceState: Bundle?) {
          super.onCreate(savedInstanceState)
@@ -519,14 +519,17 @@
          languagePreferenceAtCreate = AppLocale.preference(this)
          com.shilapi.xcertplay.hud.BydNavigationOutputs.onAppOpened(applicationContext)
          WindowCompat.setDecorFitsSystemWindows(window, true)
-@@ -101,17 +117,41 @@
+         window.statusBarColor = BG; window.navigationBarColor = BG
+         WindowInsetsControllerCompat(window, window.decorView).apply {
              isAppearanceLightStatusBars = false
-             hide(WindowInsetsCompat.Type.statusBars())
-         }
+-            hide(WindowInsetsCompat.Type.statusBars())
+-        }
 -        setupError = runCatching { DiPlayBootstrap.ensure(this) }.exceptionOrNull()?.let {
 -            android.util.Log.e("DiPlaySetup", "CarPlay authentication could not be loaded", it)
 -            getString(R.string.setup_error_auth)
--        }
++            systemBarsBehavior=WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
++            hide(WindowInsetsCompat.Type.systemBars())
+         }
          page = savedInstanceState?.getString("page") ?: intent.getStringExtra("page") ?: "home"
          render()
 +        setupError="正在准备应用…"
@@ -566,7 +569,7 @@
              }
          })
      }
-@@ -120,6 +160,9 @@
+@@ -120,6 +161,9 @@
          super.onNewIntent(intent); setIntent(intent)
          page = intent.getStringExtra("page") ?: "home"; render()
          handleWirelessRecovery()
@@ -576,20 +579,28 @@
      }
      override fun onConfigurationChanged(newConfig: Configuration) { super.onConfigurationChanged(newConfig); render() }
      private fun openOverlayPermission() {
-@@ -132,6 +175,12 @@
-     override fun onStart() {
-         super.onStart()
+@@ -134,6 +178,12 @@
          CenterMapOverlay.onDiPlayScreenShown()
-+    }
-+
+     }
+ 
 +    override fun onDestroy() {
 +        if(bluetoothReceiverRegistered) runCatching { unregisterReceiver(bluetoothUiReceiver) }
 +        handler.removeCallbacks(tick)
 +        super.onDestroy()
-     }
- 
++    }
++
      override fun onStop() {
-@@ -169,106 +218,160 @@
+         super.onStop()
+         if (!isFinishing && !isChangingConfigurations) CenterMapOverlay.scheduleShow()
+@@ -141,6 +191,7 @@
+ 
+     override fun onResume() {
+         super.onResume()
++        WindowInsetsControllerCompat(window,window.decorView).apply { systemBarsBehavior=WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE;hide(WindowInsetsCompat.Type.systemBars()) }
+         val lossEvent = intent.getLongExtra("psa_loss_event_nanos", 0L)
+         if (lossEvent > 0L) {
+             intent.removeExtra("psa_loss_event_nanos")
+@@ -169,106 +220,160 @@
          if (!initialLaunch && (page == "home" || page == "settings" || page == "connection")) render()
          if (initialLaunch) {
              initialLaunch = false
@@ -834,7 +845,7 @@
          content.addView(label(getString(R.string.your_drive_your_way), 34, TEXT, true))
          content.addView(label(getString(R.string.apply_reconnects_carplay_for_size_resolution_music_buffer), 17, MUTED).apply { setPadding(0, dp(8), 0, dp(24)) })
          section(content, getString(R.string.connection_setup), R.drawable.ic_dp_connection) { card ->
-@@ -528,58 +631,46 @@
+@@ -528,58 +633,46 @@
      }
  
  
@@ -929,7 +940,7 @@
      }
      private fun showLiveNetwork(hotspot: Boolean) {
          Thread {
-@@ -588,9 +679,9 @@
+@@ -588,9 +681,9 @@
                      val v = com.shilapi.xcertplay.network.ExistingSystemAp(this).snapshot(getSharedPreferences("psa_hotspot",0).getString("interface","").orEmpty())
                      "系统热点状态：${v.enabled ?: "不可读"}\nSSID：${v.ssid ?: "不可读"}\n密码可读取：${v.password != null}\n实际频率：${v.actualFrequency ?: "未知"}\n配置信道：${v.configuredChannel}（不代表实际信道）\n接口：${v.link?.name}\nIP：${v.link?.addresses?.joinToString { it.hostAddress.orEmpty() }}\nAP MAC：${v.link?.mac ?: "不可读"}"
                  } else {
@@ -942,7 +953,7 @@
                  }
              }.getOrElse { "读取失败：${it.javaClass.simpleName}；请检查系统权限" }
              runOnUiThread { if(!isFinishing) AlertDialog.Builder(this).setTitle("实时信息（不显示密码）").setMessage(result).setPositiveButton("确定",null).show() }
-@@ -721,7 +812,7 @@
+@@ -721,7 +814,7 @@
              dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
              dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener { hideKeyboard() }
              dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
@@ -951,7 +962,7 @@
                  val secret = password.text.toString()
                  val problem = hotspotError(name, secret)
                  if (problem != null) error.text = problem
-@@ -939,17 +1030,19 @@
+@@ -939,17 +1032,19 @@
  
      private fun refreshStatus() {
          val running = CarPlayBackgroundSession.hasSession()
@@ -976,7 +987,7 @@
              disconnectButton?.visibility = if (running) View.VISIBLE else View.GONE
              disconnectButton?.isEnabled = true
              lastRunning = running
-@@ -1181,7 +1274,7 @@
+@@ -1181,7 +1276,7 @@
          }
          parent.addView(button, matchButton(0, 60)); parent.addView(space(12))
      }
@@ -985,7 +996,7 @@
      private fun column() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(-1, -2) }
      private fun row() = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutParams = LinearLayout.LayoutParams(-1, -2) }
      private fun label(value: String, size: Int, color: Int, bold: Boolean = false) = TextView(this).apply {
-@@ -1192,7 +1285,7 @@
+@@ -1192,7 +1287,7 @@
      private fun button(title: String, primary: Boolean, click: () -> Unit) = Button(this).apply {
          text = title; isAllCaps = false; textSize = 18f; setTextColor(if (primary) BG else TEXT)
          typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)

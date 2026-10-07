@@ -70,7 +70,17 @@
              val key=CarPlayBackgroundSession.snapshot()?.controller?.boundBluetoothAddress()+com.shilapi.xcertplay.orchestration.PsaConnectionState.current()
              if(page=="phones" && key!=phoneUiKey) { phoneUiKey=key;render() }
              handler.postDelayed(this,1000)
-@@ -123,6 +126,9 @@
+@@ -112,7 +115,8 @@
+         window.statusBarColor = BG; window.navigationBarColor = BG
+         WindowInsetsControllerCompat(window, window.decorView).apply {
+             isAppearanceLightStatusBars = false
+-            hide(WindowInsetsCompat.Type.statusBars())
++            systemBarsBehavior=WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
++            hide(WindowInsetsCompat.Type.systemBars())
+         }
+         page = savedInstanceState?.getString("page") ?: intent.getStringExtra("page") ?: "home"
+         render()
+@@ -123,6 +127,9 @@
                  if(isFinishing || isDestroyed) return@runOnUiThread
                  setupError=if(error!=null) "应用认证不可用，请查看诊断" else null
                  render()
@@ -80,7 +90,7 @@
                  if(error==null && DiPlayPreferences.autoConnect(this) && intent.getStringExtra("page")==null && !CarPlayBackgroundSession.hasSession() && !CarPlayBackgroundSession.startBlocked()) connect(AirPlayPersistence.loadWirelessEnabled(this))
              }
          },"app-provisioning").start()
-@@ -139,7 +145,13 @@
+@@ -139,7 +146,13 @@
          onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
              override fun handleOnBackPressed() {
                  if (page != "home") { page = "home"; render() }
@@ -95,7 +105,7 @@
              }
          })
      }
-@@ -148,6 +160,9 @@
+@@ -148,6 +161,9 @@
          super.onNewIntent(intent); setIntent(intent)
          page = intent.getStringExtra("page") ?: "home"; render()
          handleWirelessRecovery()
@@ -105,7 +115,15 @@
      }
      override fun onConfigurationChanged(newConfig: Configuration) { super.onConfigurationChanged(newConfig); render() }
      private fun openOverlayPermission() {
-@@ -209,7 +224,7 @@
+@@ -175,6 +191,7 @@
+ 
+     override fun onResume() {
+         super.onResume()
++        WindowInsetsControllerCompat(window,window.decorView).apply { systemBarsBehavior=WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE;hide(WindowInsetsCompat.Type.systemBars()) }
+         val lossEvent = intent.getLongExtra("psa_loss_event_nanos", 0L)
+         if (lossEvent > 0L) {
+             intent.removeExtra("psa_loss_event_nanos")
+@@ -209,7 +226,7 @@
      override fun onPause() { handler.removeCallbacks(tick); super.onPause() }
  
      private fun render() {
@@ -114,7 +132,7 @@
          val content=CarPlayShell.column(this)
          when(page) {
              "phones" -> phones(content)
-@@ -224,7 +239,7 @@
+@@ -224,7 +241,7 @@
      }
  
      private fun home(content: LinearLayout) {
@@ -123,7 +141,7 @@
          content.addView(CarPlayShell.label(this,"你的手机，你的旅程",19f))
          val card=CarPlayShell.card(this)
          card.addView(CarPlayShell.label(this,CarPlayBackgroundSession.snapshot()?.controller?.boundPhoneName() ?: DiPlayPreferences.phoneName(this),28f))
-@@ -234,13 +249,19 @@
+@@ -234,13 +251,19 @@
              if(CarPlayBackgroundSession.hasSession()) openProjection() else connect(AirPlayPersistence.loadWirelessEnabled(this))
          };card.addView(connectButton,matchButton(18,64))
          disconnectButton=CarPlayShell.button(this,"断开 CarPlay") { CarPlayBackgroundSession.stop { runOnUiThread { refreshStatus() } } }.apply { visibility=View.GONE }
@@ -145,7 +163,7 @@
          setupError?.let { content.addView(CarPlayShell.label(this,it,18f)) }
      }
  
-@@ -253,9 +274,12 @@
+@@ -253,9 +276,12 @@
              else if(AirPlayPersistence.loadWirelessHotspotMode(this)==WirelessHotspotMode.SYSTEM_HOTSPOT) {
                  runCatching {
                      val live=com.shilapi.xcertplay.network.ExistingSystemAp(this).snapshot(getSharedPreferences("psa_hotspot",0).getString("interface","").orEmpty())
@@ -159,7 +177,7 @@
              } else "无线网络 · "+if(CarPlayBackgroundSession.frameReady) "已连接" else "等待连接"
              runOnUiThread { if(networkStatusView===label && label.text.toString()!=text) label.text=text;networkReadPending.set(false) }
          },"network-card-ui").start()
-@@ -300,18 +324,34 @@
+@@ -300,18 +326,34 @@
  
      private fun diagnostics(content: LinearLayout) {
          content.addView(CarPlayShell.label(this,"连接诊断",36f))
@@ -195,7 +213,7 @@
              toggle(card,"打开应用后自动连接","主页显示后在后台连接手机",DiPlayPreferences.autoConnect(this)) { DiPlayPreferences.saveAutoConnect(this,it) }
              card.addView(CarPlayShell.button(this,"首选连接方式") { page="connection";render() },matchButton(12,60))
          }
-@@ -620,7 +660,7 @@
+@@ -620,7 +662,7 @@
              parent.addView(CarPlayShell.button(this,"自动创建专用热点（高级，需权限）") { AirPlayPersistence.saveWirelessHotspotMode(this,WirelessHotspotMode.WIRELESS_AP);render() },matchButton(12,60))
          }
          parent.addView(CarPlayShell.label(this,if(manual) "请开启车机系统热点。配置不可读时补充真实参数，并确认本次连接。" else if(!hotspot) "现有局域网：使用当前网络，不创建热点。" else "蓝牙确认手机后创建专用热点。",19f))
@@ -204,7 +222,7 @@
          parent.addView(CarPlayShell.button(this,"重新检测 / 查看详情") { showLiveNetwork(hotspot) },matchButton(12,60))
          if(manual || !hotspot) {
              parent.addView(CarPlayShell.button(this,"补充网络名称与密码") {
-@@ -639,9 +679,9 @@
+@@ -639,9 +681,9 @@
                      val v = com.shilapi.xcertplay.network.ExistingSystemAp(this).snapshot(getSharedPreferences("psa_hotspot",0).getString("interface","").orEmpty())
                      "系统热点状态：${v.enabled ?: "不可读"}\nSSID：${v.ssid ?: "不可读"}\n密码可读取：${v.password != null}\n实际频率：${v.actualFrequency ?: "未知"}\n配置信道：${v.configuredChannel}（不代表实际信道）\n接口：${v.link?.name}\nIP：${v.link?.addresses?.joinToString { it.hostAddress.orEmpty() }}\nAP MAC：${v.link?.mac ?: "不可读"}"
                  } else {
@@ -217,7 +235,7 @@
                  }
              }.getOrElse { "读取失败：${it.javaClass.simpleName}；请检查系统权限" }
              runOnUiThread { if(!isFinishing) AlertDialog.Builder(this).setTitle("实时信息（不显示密码）").setMessage(result).setPositiveButton("确定",null).show() }
-@@ -772,7 +812,7 @@
+@@ -772,7 +814,7 @@
              dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
              dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener { hideKeyboard() }
              dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
