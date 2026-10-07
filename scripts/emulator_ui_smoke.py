@@ -2,6 +2,7 @@
 """Installed APK checks with no iPhone; never inject a fake connection/first frame."""
 import subprocess,time,re,xml.etree.ElementTree as E,json,atexit,struct
 from pathlib import Path
+NAMES={'cold-home':'01-home-1920x720','phones':'02-phone-list-1920x720','connection':'03-connection-1920x720','settings-1920':'04-settings-1920x720','diagnostics':'05-diagnostics-1920x720','connecting-no-phone':'06-connecting-1920x720','network-failure':'07-network-error-1920x720'}
 OUT=Path('out/emulator-ui');OUT.mkdir(parents=True,exist_ok=True)
 PKG='com.psa.carplay.dev'
 def adb(*args):return subprocess.check_output(['adb',*args],text=True).strip()
@@ -34,9 +35,10 @@ def tap(text):
  raise AssertionError('Missing/enabled button: '+text)
 def check(name,*required):
  root=dump();texts=[n.get('text','') for n in root.iter('node')]
+ name=NAMES.get(name,name)
  adb('shell','screencap','-p','/sdcard/psa-ui.png');adb('pull','/sdcard/psa-ui.png',str(OUT/(name+'.png')))
  (OUT/(name+'.xml')).write_text(E.tostring(root,encoding='unicode'))
- if name in {'cold-home','phones','connection','settings-1920','diagnostics','connecting-no-phone','network-not-ready','network-failure'}:
+ if name in set(NAMES.values()) | {'network-not-ready'}:
   dimensions=struct.unpack('>II',(OUT/(name+'.png')).read_bytes()[16:24])
   assert dimensions==(1920,720),(name,'actual screenshot dimensions',dimensions)
  for text in required:assert any(text in s for s in texts),(name,text,texts)
@@ -79,6 +81,11 @@ tap('设置');check('settings-1920','Wi-Fi 设置','车机热点设置')
 tap('Wi-Fi 设置');time.sleep(1)
 assert re.search(r'mResumedActivity[^\n]*WifiSettings',adb('shell','dumpsys','activity','activities')), 'Wi-Fi button did not resume WLAN settings'
 check('wifi-settings-opened')
+launch('settings');tap('车机热点设置');time.sleep(1)
+hotspot_activity=adb('shell','dumpsys','activity','activities')
+(OUT/'hotspot-resolved-activity.txt').write_text(hotspot_activity)
+assert re.search(r'mResumedActivity[^\n]*com.android.settings',hotspot_activity),'Hotspot settings did not open system settings'
+check('hotspot-settings-opened')
 launch(cold=True)
 tap('连接');check('connection-return','车机热点')
 tap('CarPlay');tap('连接手机');check('connecting-no-phone','PSA CarPlay','取消连接')
@@ -95,5 +102,5 @@ adb('shell','appops','set',PKG,'ACTIVATE_VPN','allow')
 adb('shell','am','force-stop',PKG);launch('connection',cold=True);tap('USB CarPlay');tap('CarPlay');tap('连接手机');check('usb-absent','PSA CarPlay','取消连接')
 log=adb('logcat','-d','-v','threadtime');(OUT/'logcat.txt').write_text(log)
 assert not re.search(r'FATAL EXCEPTION[^\n]*\n(?:[^\n]*\n){0,3}[^\n]*Process: '+re.escape(PKG),log)
-(OUT/'RESULT.json').write_text(json.dumps({'installed_apk':apk.name,'cold_launch':True,'no_phone_ui':True,'paired_list_empty_state':True,'connect_cancel_cycles':10,'usb_absent':True,'orientation':True,'first_frame_hardware_test':'NOT_PERFORMED: no iPhone'},indent=2))
+(OUT/'RESULT.json').write_text(json.dumps({'installed_apk':apk.name,'cold_launch':True,'no_phone_ui':True,'paired_list_empty_state':True,'connect_cancel_cycles':10,'usb_absent':True,'orientation':True,'launcher_hardware_test':'NOT_PERFORMED: sample ARM64 vehicle Launcher; CI is AOSP x86_64','first_frame_hardware_test':'NOT_PERFORMED: no iPhone'},indent=2))
 print('PASS: installed Android 9 UI cold launch, real empty Bluetooth list, no-phone connection, 10 cancel/retry cycles, USB absent, orientation and foreground')
