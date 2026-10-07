@@ -91,7 +91,7 @@ index 0000000..cb9acf4
 +    }
 +}
 diff --git a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt b/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
-index f91a557..cfea602 100644
+index f91a557..9a1fb78 100644
 --- a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
 +++ b/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
 @@ -21,6 +21,7 @@ import android.os.Bundle
@@ -324,7 +324,7 @@ index f91a557..cfea602 100644
                  if (message.startsWith("Microphone: ")) {
                      AsyncDiagnosticLog.append(diagnosticLog, message)
                  } else {
-@@ -2904,6 +2905,21 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -2904,6 +2905,14 @@ class CarPlayHostActivity : ComponentActivity() {
              }
  
              override fun onSessionActive(session: AirPlaySession) {
@@ -333,20 +333,13 @@ index f91a557..cfea602 100644
 +                carPlayUi.reset(controllerGeneration)
 +                CarPlayBackgroundSession.frameReady=false
 +                    CarPlayBackgroundSession.decoderFrameReady=false
-+                firstFrameDeadline?.let(mainHandler::removeCallbacks)
-+                val deadline=Runnable {
-+                    if(controllerGeneration==restartGeneration && activeAirPlaySession===session && !shuttingDown.get() && !carPlayUi.firstFrameReceived) {
-+                        carPlayUi.timeout(controllerGeneration);setConnectionStage("FIRST_FRAME_TIMEOUT")
-+                        appendLog("UI_FIRST_FRAME_TIMEOUT generation=$controllerGeneration");updateDebugOverlays()
-+                    }
-+                }
-+                firstFrameDeadline=deadline;mainHandler.postDelayed(deadline,20_000)
++                scheduleFirstFrameDeadline(session,controllerGeneration)
 +                setConnectionStage("AirPlay connected; waiting for first frame")
 +                }
                  if (controllerGeneration == restartGeneration) psaDiagnostics?.sessionActive()
                  if (controllerGeneration == restartGeneration) PsaConnectionState.set("AirPlay", "Connected")
                  runOnUiThread {
-@@ -2911,6 +2927,8 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -2911,6 +2920,8 @@ class CarPlayHostActivity : ComponentActivity() {
                          return@runOnUiThread
                      }
                      activeAirPlaySession = session
@@ -355,7 +348,7 @@ index f91a557..cfea602 100644
                      PsaConnectionState.set("连接", "连接正常")
                      CarPlayBackgroundSession.active = true
                      reconnectAttempts = 0
-@@ -2935,6 +2953,10 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -2935,6 +2946,10 @@ class CarPlayHostActivity : ComponentActivity() {
                          return@runOnUiThread
                      }
                      activeScreenStreamTypes.clear()
@@ -366,7 +359,7 @@ index f91a557..cfea602 100644
                      setConnectionStage(getString(R.string.carplay_session_ended_reconnecting))
                      appendLog("AirPlay session ended; reconnecting from scratch")
                      reconnectAfterLoss("AirPlay session ended")
-@@ -2952,6 +2974,10 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -2952,6 +2967,10 @@ class CarPlayHostActivity : ComponentActivity() {
                          return@runOnUiThread
                      }
                      activeScreenStreamTypes.clear()
@@ -377,7 +370,7 @@ index f91a557..cfea602 100644
                      setConnectionStage(getString(R.string.transport_error_reconnecting))
                      appendLog("CarPlay transport error: $message; reconnecting from scratch")
                      reconnectAfterLoss("CarPlay transport error: $message")
-@@ -2969,6 +2995,7 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -2969,6 +2988,7 @@ class CarPlayHostActivity : ComponentActivity() {
                      if (controllerGeneration != restartGeneration) {
                          return@runOnUiThread
                      }
@@ -385,7 +378,7 @@ index f91a557..cfea602 100644
                      DisplayDiagnosticSnapshot.record(this@CarPlayHostActivity, displayDiagnosticAttempt, message)
                      if (menuOpen) return@runOnUiThread
                      if (message.startsWith(PROTOCOL_TRACE_PREFIX)) {
-@@ -2990,6 +3017,9 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -2990,6 +3010,9 @@ class CarPlayHostActivity : ComponentActivity() {
              when (status) {
                  is CarPlayStatus.Failed -> if (activeAirPlaySession != null && !shuttingDown.get()) {
                      runOnUiThread { returnHomeAfterConfirmedLoss("TRANSPORT_FAILURE", System.nanoTime()) }
@@ -395,7 +388,27 @@ index f91a557..cfea602 100644
                  } else if (status.manualRecoveryRequired) {
                      wifiRecoveryButton?.visibility = View.VISIBLE
                  } else {
-@@ -3009,8 +3039,12 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -3001,6 +3024,19 @@ class CarPlayHostActivity : ComponentActivity() {
+         }
+     }
+ 
++    private fun scheduleFirstFrameDeadline(session: AirPlaySession,generation: Int) {
++        firstFrameDeadline?.let(mainHandler::removeCallbacks)
++        val deadline=Runnable {
++            if(generation==restartGeneration && activeAirPlaySession===session && !shuttingDown.get() && !carPlayUi.firstFrameReceived) {
++                carPlayUi.timeout(generation)
++                setConnectionStage("FIRST_FRAME_TIMEOUT")
++                appendLog("UI_FIRST_FRAME_TIMEOUT generation=$generation")
++            }
++        }
++        firstFrameDeadline=deadline
++        mainHandler.postDelayed(deadline,20_000)
++    }
++
+     private fun adoptBackgroundSession(): Boolean {
+         if (CarPlayBackgroundSession.startBlocked()) return false
+         val snapshot = CarPlayBackgroundSession.snapshot() ?: return false
+@@ -3009,8 +3045,12 @@ class CarPlayHostActivity : ComponentActivity() {
              return false
          }
          displayDiagnosticAttempt = DisplayDiagnosticSnapshot.currentAttempt(this)
@@ -408,7 +421,15 @@ index f91a557..cfea602 100644
          sessionDisplay = snapshot.display
          MapMirrors.reapply()
          CarPlayBackgroundSession.store(snapshot.controller, snapshot.sink, snapshot.width, snapshot.height,
-@@ -3127,6 +3161,12 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -3049,6 +3089,7 @@ class CarPlayHostActivity : ComponentActivity() {
+             },
+         )
+         updateDebugOverlays()
++        activeAirPlaySession?.let { scheduleFirstFrameDeadline(it,restartGeneration) }
+         return true
+     }
+ 
+@@ -3127,6 +3168,12 @@ class CarPlayHostActivity : ComponentActivity() {
              },
          )
          controller = next
@@ -421,7 +442,7 @@ index f91a557..cfea602 100644
          CarPlayMediaKeys.attach(this, next)
          if (airPlayConfig.videoInCar) CarPlayVideo.attach(this, next)
          val display = CarPlaySessionDisplay(airPlayConfig.main.widthPixels, airPlayConfig.main.heightPixels,
-@@ -3292,6 +3332,10 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -3292,6 +3339,10 @@ class CarPlayHostActivity : ComponentActivity() {
      private fun returnHomeAfterConfirmedLoss(reason: String, eventNanos: Long) {
          activeAirPlaySession = null
          activeScreenStreamTypes.clear()
@@ -432,7 +453,7 @@ index f91a557..cfea602 100644
          CarPlayBackgroundSession.active = false
          PsaConnectionState.set("连接", "等待重连")
          appendFileLog("CONNECTION_STATE state=DISCONNECTED reason=$reason eventNanos=$eventNanos")
-@@ -3308,7 +3352,7 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -3308,7 +3359,7 @@ class CarPlayHostActivity : ComponentActivity() {
      }
  
      private fun reconnectAfterLoss(reason: String) {
@@ -441,7 +462,7 @@ index f91a557..cfea602 100644
              (reason.contains("NETWORK_IDENTITY_UNVERIFIED") || reason.contains("NETWORK_AMBIGUOUS") || reason.contains("IPV4_UNAVAILABLE"))) {
              setConnectionStage("LAN 网络身份未验证，请检查精确位置权限和 LAN 设置后人工连接")
              return
-@@ -3356,6 +3400,10 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -3356,6 +3407,10 @@ class CarPlayHostActivity : ComponentActivity() {
          val size = activeDisplaySize ?: return
          appendLog(reason)
          activeScreenStreamTypes.clear()
@@ -452,7 +473,7 @@ index f91a557..cfea602 100644
          setConnectionStage(reason)
          Log.i(TAG, "$reason; rebuilding stack at ${size.width}x${size.height}")
          val generation = ++restartGeneration
-@@ -3399,7 +3447,13 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -3399,7 +3454,13 @@ class CarPlayHostActivity : ComponentActivity() {
                      }
                      CarPlayBackgroundSession.closed(oldController)
                      handshakeResetInProgress = false
@@ -467,7 +488,7 @@ index f91a557..cfea602 100644
                  }
              }
          }
-@@ -3593,6 +3647,8 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -3593,6 +3654,8 @@ class CarPlayHostActivity : ComponentActivity() {
                  activeScreenStreamTypes.add(type)
              } else {
                  activeScreenStreamTypes.remove(type)
@@ -476,7 +497,7 @@ index f91a557..cfea602 100644
              }
              if (type == SCREEN_TYPE_ALT) {
                  Log.i(ClusterMapPresentation.TAG, "cluster stream active=$active")
-@@ -3619,13 +3675,26 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -3619,13 +3682,26 @@ class CarPlayHostActivity : ComponentActivity() {
  
      private fun setConnectionStage(message: String) {
          latestStage = message
@@ -505,7 +526,7 @@ index f91a557..cfea602 100644
      }
  
      private fun friendlyStage(message: String): String = when {
-@@ -3713,17 +3782,26 @@ class CarPlayHostActivity : ComponentActivity() {
+@@ -3713,17 +3789,26 @@ class CarPlayHostActivity : ComponentActivity() {
      private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
  
      private fun CarPlayStatus.describe(): String = when (this) {
@@ -537,7 +558,7 @@ index f91a557..cfea602 100644
          CarPlayStatus.DiscoveringIphone -> getString(R.string.discovering_iphone)
          CarPlayStatus.WaitingForIphone -> getString(R.string.waiting_for_iphone_over_usb)
          CarPlayStatus.RequestingIphonePermission -> getString(R.string.requesting_iphone_usb_permission)
-@@ -3792,6 +3870,8 @@ internal data class CarPlaySessionDisplay(
+@@ -3792,6 +3877,8 @@ internal data class CarPlaySessionDisplay(
  /** Process-local hand-off for keeping the CarPlay session alive while no Activity is visible. */
  internal object CarPlayBackgroundSession {
      @Volatile var active = false
@@ -546,7 +567,7 @@ index f91a557..cfea602 100644
      private var closingController: CarPlayController? = null
      @Synchronized fun beginClosing(candidate: CarPlayController?) { if (candidate != null) closingController = candidate }
      @Synchronized fun closed(candidate: CarPlayController?) { if (closingController === candidate) closingController = null }
-@@ -3863,6 +3943,8 @@ internal object CarPlayBackgroundSession {
+@@ -3863,6 +3950,8 @@ internal object CarPlayBackgroundSession {
          sink = null
          if (!keepOwner) { stopAction = null; owner = null }
          active = false
@@ -606,10 +627,10 @@ index 0000000..ce0cc4d
 +}
 diff --git a/common/src/main/java/com/shilapi/xcertplay/CarPlayUiState.kt b/common/src/main/java/com/shilapi/xcertplay/CarPlayUiState.kt
 new file mode 100644
-index 0000000..96cecdc
+index 0000000..0e4da16
 --- /dev/null
 +++ b/common/src/main/java/com/shilapi/xcertplay/CarPlayUiState.kt
-@@ -0,0 +1,35 @@
+@@ -0,0 +1,38 @@
 +package com.shilapi.xcertplay
 +
 +/** Presentation gate; transport/session readiness alone never exposes the video. */
@@ -630,10 +651,13 @@ index 0000000..96cecdc
 +internal object ConnectionUiState {
 +    fun friendly(raw: String): String = when {
 +        raw.contains("FIRST_FRAME_TIMEOUT") -> "未收到 CarPlay 画面，请重新连接"
-+        raw.contains("first frame") -> "CarPlay 已连接"
-+        raw.contains("HOTSPOT",true) || raw.contains("热点") -> "车机热点不可用，请开启热点或检查配置"
++        raw.contains("first frame",true) -> "正在启动 CarPlay，等待画面…"
++        raw.contains("HOTSPOT_FAILED",true) || raw.contains("SOFTAP_START_FAILED",true) || raw.contains("热点不可用") -> "车机热点不可用，请开启热点或检查配置"
 +        raw.contains("FIRST_TCP_TIMEOUT") -> "未收到 iPhone 的无线连接"
 +        raw.contains("Failed",true) || raw.contains("error",true) || raw.contains("失败") -> "连接失败，请重试或查看诊断"
++        raw.contains("不可用") || raw.contains("未验证") || raw.contains("权限") -> "连接条件未就绪，请检查连接设置和权限"
++        raw.contains("人工重连") || raw.contains("禁止新控制器") || raw.contains("连接已暂停") -> "连接已暂停，请稍后重试或查看诊断"
++        raw.contains("热点") || raw.contains("SoftAP",true) -> "正在准备车机热点"
 +        raw.contains("Bluetooth",true) || raw.contains("蓝牙") -> "正在确认 iPhone"
 +        raw.contains("AirPlay",true) || raw.contains("session active",true) -> "正在启动 CarPlay，等待画面…"
 +        raw.contains("LAN",true) || raw.contains("network",true) || raw.contains("无线连接") -> "正在准备无线网络"
@@ -646,7 +670,7 @@ index 0000000..96cecdc
 +internal data class SettingsUiState(val autoConnect: Boolean,val mode: String)
 +internal data class DeviceUiState(val name: String,val address: String,val iphone: Boolean,val connected: Boolean?,val bound: Boolean=false)
 diff --git a/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt b/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
-index ddd49a7..5d35569 100644
+index ddd49a7..c3ac252 100644
 --- a/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
 +++ b/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
 @@ -67,11 +67,24 @@ class DiPlayActivity : ComponentActivity() {
@@ -879,7 +903,7 @@ index ddd49a7..5d35569 100644
 +                    rows.forEach { device ->
 +                        val card=CarPlayShell.card(this)
 +                        card.addView(CarPlayShell.label(this,device.name,25f))
-+                        val state=if(device.bound) "✓ 当前 CarPlay 手机 · 已确认" else if(device.address==DiPlayPreferences.phoneAddress(this) && AirPlayPersistence.loadWirelessEnabled(this) && CarPlayBackgroundSession.hasSession()) "正在确认 iPhone…" else if(device.connected==true) "已连接 · 已配对" else "已配对 · 未连接"
++                        val state=if(device.bound) "✓ 当前 CarPlay 手机 · 已确认" else if(device.address==DiPlayPreferences.phoneAddress(this) && AirPlayPersistence.loadWirelessEnabled(this) && CarPlayBackgroundSession.hasSession()) "正在确认 iPhone…" else if(device.connected==true) "已连接 · 已配对" else if(device.connected==false) "已配对 · 未连接" else "已配对 · 连接状态待确认"
 +                        card.addView(CarPlayShell.label(this,(if(device.iphone) "iPhone · " else "蓝牙设备 · ")+state,18f))
 +                        card.addView(CarPlayShell.button(this,"设为本次连接手机") {
 +                            if(CarPlayBackgroundSession.hasSession()) { toast("先取消或断开当前连接，再选择手机");return@button }
@@ -1245,7 +1269,7 @@ index 0000000..573beff
 +}
 diff --git a/common/src/test/java/com/shilapi/xcertplay/CarPlayUiStateTest.kt b/common/src/test/java/com/shilapi/xcertplay/CarPlayUiStateTest.kt
 new file mode 100644
-index 0000000..6679a0f
+index 0000000..a0c9e2c
 --- /dev/null
 +++ b/common/src/test/java/com/shilapi/xcertplay/CarPlayUiStateTest.kt
 @@ -0,0 +1,14 @@
@@ -1255,7 +1279,7 @@ index 0000000..6679a0f
 +import org.junit.Test
 +
 +class CarPlayUiStateTest {
-+    @Test fun setupAndStatusNeverExposeVideo() { val s=CarPlayUiState();s.reset(1);s.stage("AirPlay connected");assertFalse(s.firstFrameReceived) }
++    @Test fun setupAndStatusNeverExposeVideo() { val s=CarPlayUiState();s.reset(1);s.stage("AirPlay connected; waiting for first frame");assertFalse(s.firstFrameReceived);assertTrue(s.title.contains("等待画面")) }
 +    @Test fun decoderOnlyDoesNotExposeBlackTexture() { val s=CarPlayUiState();s.reset(1);s.decoded(1);assertFalse(s.firstFrameReceived) }
 +    @Test fun actualTextureUpdateAfterDecoderOpensGate() { val s=CarPlayUiState();s.reset(1);s.decoded(1);s.textureUpdated(1);assertTrue(s.firstFrameReceived) }
 +    @Test fun staleFrameCannotExposeNewSession() { val s=CarPlayUiState();s.reset(2);s.decoded(1);s.textureUpdated(1);assertFalse(s.firstFrameReceived) }

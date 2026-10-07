@@ -38,6 +38,10 @@ jobs:
           git -C "$RUNNER_TEMP/psa-baseline" apply "$RUNNER_TEMP/psa-working-baseline.patch"
           python3 scripts/compare_apk_signatures.py --self-test
           python3 scripts/verify_softap_scope.py "$RUNNER_TEMP/psa-baseline" upstream > "$RUNNER_TEMP/PSA-SOURCE-CHECK.txt"
+          git -C upstream worktree add --detach "$RUNNER_TEMP/psa-ui-baseline" HEAD
+          base64 -d patches/psa-main-0.2.14-ui-fix.patch.gz.b64 | gzip -d > "$RUNNER_TEMP/psa-ui-baseline.patch"
+          git -C "$RUNNER_TEMP/psa-ui-baseline" apply "$RUNNER_TEMP/psa-ui-baseline.patch"
+          python3 scripts/verify_ui_scope.py "$RUNNER_TEMP/psa-ui-baseline" upstream > "$RUNNER_TEMP/PSA-UI-SOURCE-CHECK.txt"
       - name: Provision existing upstream runtime authentication
         run: |
           curl --fail --location --retry 3 https://github.com/shihabal3amri/DiPlay/releases/download/v0.2.10/DiPlay-0.2.10.apk --output "$RUNNER_TEMP/upstream.apk"
@@ -81,6 +85,7 @@ jobs:
             echo 'Baseline certificate unavailable; overwrite-install compatibility UNKNOWN.' > out/APK-COMPATIBILITY.txt
           fi
           cp SOFTAP-IMPLEMENTATION.md CHANGED-SOURCE-SOFTAP.txt patches/psa-0.2.12-to-softap.diff out/
+          cp UI-IMPLEMENTATION.md patches/psa-0.2.14-ui-fix-to-0.2.15-ui.diff "$RUNNER_TEMP/PSA-UI-SOURCE-CHECK.txt" out/
           cp "$RUNNER_TEMP/PSA-SOURCE-CHECK.txt" "$RUNNER_TEMP/PSA-LINT-COMPARISON.txt" out/
           cp -r upstream/shared/build/reports/lint* out/
           mkdir -p out/lint/common out/lint/mobile out/lint/baseline

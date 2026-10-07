@@ -1,0 +1,1053 @@
+diff --git a/common/src/main/java/com/shilapi/xcertplay/AirPlayPersistence.kt b/common/src/main/java/com/shilapi/xcertplay/AirPlayPersistence.kt
+--- a/common/src/main/java/com/shilapi/xcertplay/AirPlayPersistence.kt
++++ b/common/src/main/java/com/shilapi/xcertplay/AirPlayPersistence.kt
+@@ -247,7 +247,7 @@
+     fun loadWirelessHotspotMode(context: Context): WirelessHotspotMode {
+         return when(loadConnectionMode(context)) {
+             com.shilapi.xcertplay.orchestration.ConnectionMode.EXISTING_LAN -> WirelessHotspotMode.EXISTING_LAN
+-            com.shilapi.xcertplay.orchestration.ConnectionMode.AUTO,com.shilapi.xcertplay.orchestration.ConnectionMode.WIRELESS_AP -> WirelessHotspotMode.WIRELESS_AP
++            com.shilapi.xcertplay.orchestration.ConnectionMode.AUTO,com.shilapi.xcertplay.orchestration.ConnectionMode.WIRELESS_AP -> if(context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).getString(KEY_WIRELESS_HOTSPOT_MODE,null)=="WIRELESS_AP") WirelessHotspotMode.WIRELESS_AP else WirelessHotspotMode.SYSTEM_HOTSPOT
+             com.shilapi.xcertplay.orchestration.ConnectionMode.USB -> {
+                 val saved=context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).getString(KEY_WIRELESS_HOTSPOT_MODE,null)
+                 if(saved in listOf("EXISTING_WIFI","EXISTING_LAN")) WirelessHotspotMode.EXISTING_LAN else WirelessHotspotMode.WIRELESS_AP
+@@ -257,7 +257,7 @@
+     fun saveWirelessHotspotMode(context: Context, mode: WirelessHotspotMode) {
+         // Wireless parameters never change the selected transport (especially manual USB/AUTO).
+         context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).edit().putString(KEY_WIRELESS_HOTSPOT_MODE,
+-            if(mode==WirelessHotspotMode.EXISTING_LAN || mode==WirelessHotspotMode.EXISTING_WIFI) "EXISTING_LAN" else "WIRELESS_AP").apply()
++            if(mode==WirelessHotspotMode.EXISTING_LAN || mode==WirelessHotspotMode.EXISTING_WIFI) "EXISTING_LAN" else if(mode==WirelessHotspotMode.SYSTEM_HOTSPOT) "SYSTEM_HOTSPOT" else "WIRELESS_AP").apply()
+     }
+ 
+     fun loadDebugLogsEnabled(context: Context): Boolean =
+diff --git a/common/src/main/java/com/shilapi/xcertplay/BluetoothPhoneRepository.kt b/common/src/main/java/com/shilapi/xcertplay/BluetoothPhoneRepository.kt
+new file mode 100644
+--- /dev/null
++++ b/common/src/main/java/com/shilapi/xcertplay/BluetoothPhoneRepository.kt
+@@ -0,0 +1,19 @@
++package com.shilapi.xcertplay
++
++import android.bluetooth.BluetoothManager
++import android.content.Context
++
++/** Read-only real paired devices. No discovery/pairing or bootstrap ownership is changed. */
++internal object BluetoothPhoneRepository {
++    @android.annotation.SuppressLint("MissingPermission")
++    fun read(context: Context,bound: String?,preferred: String?): List<DeviceUiState> {
++        if(android.os.Build.VERSION.SDK_INT>=31 && context.checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT)!=android.content.pm.PackageManager.PERMISSION_GRANTED) throw IllegalStateException("需要蓝牙设备权限")
++        val adapter=context.getSystemService(BluetoothManager::class.java)?.adapter ?: return emptyList()
++        val devices=try { adapter.bondedDevices.orEmpty().map { d ->
++            val name=d.name ?: "未命名蓝牙设备"
++            val connected=runCatching { d.javaClass.getMethod("isConnected").invoke(d) as? Boolean }.getOrNull()
++            DeviceUiState(name,d.address,name.contains("iphone",true),connected,d.address.equals(bound,true))
++        } } catch(e: SecurityException) { throw IllegalStateException("需要蓝牙设备权限",e) }
++        return devices.sortedWith(compareByDescending<DeviceUiState> { it.bound }.thenByDescending { it.connected==true }.thenByDescending { it.iphone }.thenByDescending { it.address==preferred }.thenBy { it.name })
++    }
++}
+diff --git a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt b/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
+--- a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
++++ b/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
+@@ -21,6 +21,7 @@
+ import android.os.Handler
+ import android.os.Looper
+ import android.os.Process
++import android.provider.Settings
+ import android.text.Editable
+ import android.text.InputType
+ import android.text.TextUtils
+@@ -106,6 +107,12 @@
+     )
+ 
+     private var connectionPanel: View? = null
++    private val carPlayUi=CarPlayUiState()
++    private var projectionReturn: View?=null
++    private var projectionFadeRunning=false
++    private var phoneTitleView: TextView?=null
++    private var progressStepsView: TextView?=null
++    private var firstFrameDeadline: Runnable?=null
+     private var wifiRecoveryButton: View? = null
+     private var reconnectAttempts = 0
+     private lateinit var airPlayIdentity: AirPlayIdentity
+@@ -400,11 +407,23 @@
+             }
+             currentSurface = null
+             currentSurfaceTexture = null
++            carPlayUi.reset(restartGeneration,CarPlayBackgroundSession.decoderFrameReady)
++            updateDebugOverlays()
+             appendLog("Texture surface destroyed")
+             return true
+         }
+ 
+-        override fun onSurfaceTextureUpdated(texture: SurfaceTexture) = Unit
++        override fun onSurfaceTextureUpdated(texture: SurfaceTexture) {
++            if(texture!==currentSurfaceTexture) return
++            val before=carPlayUi.firstFrameReceived
++            carPlayUi.textureUpdated(restartGeneration)
++            if(carPlayUi.firstFrameReceived && !before) {
++                CarPlayBackgroundSession.frameReady=true
++                firstFrameDeadline?.let(mainHandler::removeCallbacks)
++                controller?.boundBluetoothAddress()?.let { getSharedPreferences("diplay",0).edit().putString("recent_success_address",it).apply() }
++                updateDebugOverlays()
++            }
++        }
+     }
+ 
+     override fun onCreate(savedInstanceState: Bundle?) {
+@@ -414,11 +433,7 @@
+         MapMirrors.sink = mirrorSink
+         MapMirrors.onChanged = mirrorsChanged
+         languagePreferenceAtCreate = AppLocale.preference(this)
+-        if (runCatching { DiPlayBootstrap.ensure(this) }.isFailure) {
+-            startActivity(Intent(this, DiPlayActivity::class.java))
+-            finish(); return
+-        }
+-        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
++        if(getSharedPreferences("diplay",0).getBoolean("keep_screen_on",true)) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+         initializeSessionLog()
+         psaDiagnostics = PsaDisconnectDiagnostics(this, ::appendLog).also { it.start() }
+         lastConfiguration = Configuration(resources.configuration)
+@@ -447,16 +462,20 @@
+             "Host started; MFI target=${mfiTargetLabel(mfiTarget)}; " +
+                 "transport=${if (wirelessEnabled) "wireless" else "wired"}",
+         )
+-        val reusedBackgroundSession = adoptBackgroundSession()
+-        microphoneAvailable =
+-            checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+-        microphonePermissionResolved = microphoneAvailable
+-        if (reusedBackgroundSession) {
+-            updateDebugOverlays()
+-        } else if (microphonePermissionResolved) {
+-            requestStartupPrerequisites()
+-        } else {
+-            microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
++        window.decorView.post {
++            Thread({
++                val provision=runCatching { DiPlayBootstrap.ensure(this) }
++                runOnUiThread {
++                    if(isFinishing || isDestroyed) return@runOnUiThread
++                    if(provision.isFailure) { setConnectionStage("认证不可用，请查看诊断");return@runOnUiThread }
++                    val reusedBackgroundSession=adoptBackgroundSession()
++                    microphoneAvailable=checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED
++                    microphonePermissionResolved=microphoneAvailable
++                    if(reusedBackgroundSession) updateDebugOverlays()
++                    else if(microphonePermissionResolved) requestStartupPrerequisites()
++                    else microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
++                }
++            },"host-provisioning").start()
+         }
+     }
+ 
+@@ -879,6 +898,7 @@
+         }
+         currentSurface = null
+         currentSurfaceTexture = null
++        firstFrameDeadline?.let(mainHandler::removeCallbacks)
+         psaDiagnostics?.stop()
+         psaDiagnostics = null
+         sessionLog?.append("Activity destroyed")
+@@ -899,49 +919,29 @@
+         }
+         root.addView(video, FrameLayout.LayoutParams(-1, -1))
+         root.addView(gestureLayer, FrameLayout.LayoutParams(-1, -1))
+-        val panel = LinearLayout(this).apply {
+-            orientation = LinearLayout.VERTICAL
+-            gravity = Gravity.CENTER
+-            setPadding(dp(32), dp(32), dp(32), dp(32))
+-            setBackgroundColor(Color.rgb(12, 17, 27))
+-            isClickable = true
+-        }
+-        panel.addView(ImageView(this).apply {
+-            setImageResource(R.drawable.ic_carplay); contentDescription = getString(R.string.carplay)
+-        }, LinearLayout.LayoutParams(dp(88), dp(88)))
+-        panel.addView(TextView(this).apply {
+-            text = getString(R.string.diplay); textSize = 34f; setTextColor(Color.rgb(241, 245, 252))
+-            gravity = Gravity.CENTER; setPadding(0, dp(18), 0, dp(14))
+-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+-        })
+-        val stage = TextView(this).apply {
+-            text = getString(R.string.getting_carplay_ready); textSize = 22f; gravity = Gravity.CENTER
+-            setTextColor(Color.rgb(241, 245, 252))
+-        }
+-        panel.addView(stage)
+-        panel.addView(TextView(this).apply {
+-            text = if (wirelessEnabled) getString(R.string.keep_your_iphone_nearby_with_bluetooth_and_wi_fi_on_allow)
+-                else getString(R.string.use_a_usb_data_cable_and_unlock_your_iphone_allow_trust_an)
+-            textSize = 17f; gravity = Gravity.CENTER; setTextColor(Color.rgb(168, 182, 202))
+-            setPadding(0, dp(14), 0, dp(24))
+-        })
+-        panel.addView(Button(this).apply {
+-            text = "检查 LAN 网络"; isAllCaps = false; textSize = 18f
+-            visibility = View.GONE
+-            setOnClickListener { showDiPlayHome("wireless-recovery") }
+-            wifiRecoveryButton = this
+-        }, LinearLayout.LayoutParams(dp(300), dp(64)).apply { bottomMargin = dp(12) })
+-        panel.addView(Button(this).apply {
+-            text = getString(R.string.back_to_diplay); isAllCaps = false; textSize = 18f
+-            setTextColor(Color.rgb(12, 17, 27))
+-            background = GradientDrawable().apply { setColor(Color.rgb(166, 200, 255)); cornerRadius = dp(20).toFloat() }
+-            setOnClickListener { showDiPlayHome() }
+-        }, LinearLayout.LayoutParams(dp(300), dp(64)))
+-        panel.addView(TextView(this).apply {
+-            text = getString(R.string.in_carplay_swipe_down_with_three_fingers_to_open_diplay_se)
+-            textSize = 13f; gravity = Gravity.CENTER; setTextColor(Color.rgb(168, 182, 202)); setPadding(0, dp(20), 0, 0)
+-        })
+-        root.addView(panel, FrameLayout.LayoutParams(-1, -1))
++        val body=CarPlayShell.column(this)
++        body.addView(CarPlayShell.label(this,"CarPlay",38f))
++        val card=CarPlayShell.card(this)
++        phoneTitleView=CarPlayShell.label(this,DiPlayPreferences.phoneName(this),28f);card.addView(phoneTitleView)
++        val stage=CarPlayShell.label(this,"正在连接 iPhone…",24f)
++        card.addView(stage)
++        progressStepsView=CarPlayShell.label(this,"蓝牙 · 确认手机\n网络 · 准备连接\n画面就绪后自动进入 CarPlay",19f);card.addView(progressStepsView)
++        card.addView(CarPlayShell.button(this,"取消连接") {
++            carPlayUi.disconnected(restartGeneration);updateDebugOverlays()
++            shutdown(false,"User cancelled connection") { showDiPlayHome();finish() }
++        },LinearLayout.LayoutParams(-1,dp(64)).apply { topMargin=dp(18) })
++        card.addView(CarPlayShell.button(this,"重新连接") { restartCarPlay("User retry") },LinearLayout.LayoutParams(-1,dp(60)).apply { topMargin=dp(12) })
++        card.addView(CarPlayShell.button(this,"打开网络设置") {
++            runCatching { startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS)) }
++        },LinearLayout.LayoutParams(-1,dp(60)).apply { topMargin=dp(12) })
++        body.addView(card)
++        val panel=CarPlayShell.layout(this,"home",{ target ->
++            startActivity(Intent(this,DiPlayActivity::class.java).putExtra("page",target))
++        },body)
++        root.addView(panel,FrameLayout.LayoutParams(-1,-1))
++        val back=CarPlayShell.button(this,"返回") { showDiPlayHome() }.apply { visibility=View.GONE }
++        root.addView(back,FrameLayout.LayoutParams(dp(100),dp(56),Gravity.TOP or Gravity.END).apply { topMargin=dp(12);rightMargin=dp(12) })
++        projectionReturn=back
+         videoView = video
+         gestureOverlay = gestureLayer
+         stageStatusView = stage
+@@ -2905,6 +2905,14 @@
+             }
+ 
+             override fun onSessionActive(session: AirPlaySession) {
++                runOnUiThread {
++                    if(controllerGeneration!=restartGeneration || activeAirPlaySession===session) return@runOnUiThread
++                carPlayUi.reset(controllerGeneration)
++                CarPlayBackgroundSession.frameReady=false
++                    CarPlayBackgroundSession.decoderFrameReady=false
++                scheduleFirstFrameDeadline(session,controllerGeneration)
++                setConnectionStage("AirPlay connected; waiting for first frame")
++                }
+                 if (controllerGeneration == restartGeneration) psaDiagnostics?.sessionActive()
+                 if (controllerGeneration == restartGeneration) PsaConnectionState.set("AirPlay", "Connected")
+                 runOnUiThread {
+@@ -2938,6 +2946,10 @@
+                         return@runOnUiThread
+                     }
+                     activeScreenStreamTypes.clear()
++                    carPlayUi.disconnected(restartGeneration)
++                    CarPlayBackgroundSession.frameReady=false
++                    CarPlayBackgroundSession.decoderFrameReady=false
++                    updateDebugOverlays()
+                     setConnectionStage(getString(R.string.carplay_session_ended_reconnecting))
+                     appendLog("AirPlay session ended; reconnecting from scratch")
+                     reconnectAfterLoss("AirPlay session ended")
+@@ -2955,6 +2967,10 @@
+                         return@runOnUiThread
+                     }
+                     activeScreenStreamTypes.clear()
++                    carPlayUi.disconnected(restartGeneration)
++                    CarPlayBackgroundSession.frameReady=false
++                    CarPlayBackgroundSession.decoderFrameReady=false
++                    updateDebugOverlays()
+                     setConnectionStage(getString(R.string.transport_error_reconnecting))
+                     appendLog("CarPlay transport error: $message; reconnecting from scratch")
+                     reconnectAfterLoss("CarPlay transport error: $message")
+@@ -2972,6 +2988,7 @@
+                     if (controllerGeneration != restartGeneration) {
+                         return@runOnUiThread
+                     }
++                    if(message=="Video: first frame rendered") { carPlayUi.decoded(controllerGeneration);CarPlayBackgroundSession.decoderFrameReady=true;updateDebugOverlays() }
+                     DisplayDiagnosticSnapshot.record(this@CarPlayHostActivity, displayDiagnosticAttempt, message)
+                     if (menuOpen) return@runOnUiThread
+                     if (message.startsWith(PROTOCOL_TRACE_PREFIX)) {
+@@ -3007,6 +3024,19 @@
+         }
+     }
+ 
++    private fun scheduleFirstFrameDeadline(session: AirPlaySession,generation: Int) {
++        firstFrameDeadline?.let(mainHandler::removeCallbacks)
++        val deadline=Runnable {
++            if(generation==restartGeneration && activeAirPlaySession===session && !shuttingDown.get() && !carPlayUi.firstFrameReceived) {
++                carPlayUi.timeout(generation)
++                setConnectionStage("FIRST_FRAME_TIMEOUT")
++                appendLog("UI_FIRST_FRAME_TIMEOUT generation=$generation")
++            }
++        }
++        firstFrameDeadline=deadline
++        mainHandler.postDelayed(deadline,20_000)
++    }
++
+     private fun adoptBackgroundSession(): Boolean {
+         if (CarPlayBackgroundSession.startBlocked()) return false
+         val snapshot = CarPlayBackgroundSession.snapshot() ?: return false
+@@ -3018,7 +3048,9 @@
+         wirelessEnabled=snapshot.controller.sessionTransport() == CarPlayTransport.WIRELESS
+         transportManager.begin(!wirelessEnabled)
+         controller = snapshot.controller
++        activeAirPlaySession=snapshot.controller.currentAirPlaySession()
+         sink = snapshot.sink
++        carPlayUi.reset(restartGeneration,CarPlayBackgroundSession.decoderFrameReady)
+         sessionDisplay = snapshot.display
+         MapMirrors.reapply()
+         CarPlayBackgroundSession.store(snapshot.controller, snapshot.sink, snapshot.width, snapshot.height,
+@@ -3057,6 +3089,7 @@
+             },
+         )
+         updateDebugOverlays()
++        activeAirPlaySession?.let { scheduleFirstFrameDeadline(it,restartGeneration) }
+         return true
+     }
+ 
+@@ -3306,6 +3339,10 @@
+     private fun returnHomeAfterConfirmedLoss(reason: String, eventNanos: Long) {
+         activeAirPlaySession = null
+         activeScreenStreamTypes.clear()
++                    carPlayUi.disconnected(restartGeneration)
++                    CarPlayBackgroundSession.frameReady=false
++                    CarPlayBackgroundSession.decoderFrameReady=false
++                    updateDebugOverlays()
+         CarPlayBackgroundSession.active = false
+         PsaConnectionState.set("连接", "等待重连")
+         appendFileLog("CONNECTION_STATE state=DISCONNECTED reason=$reason eventNanos=$eventNanos")
+@@ -3370,6 +3407,10 @@
+         val size = activeDisplaySize ?: return
+         appendLog(reason)
+         activeScreenStreamTypes.clear()
++                    carPlayUi.disconnected(restartGeneration)
++                    CarPlayBackgroundSession.frameReady=false
++                    CarPlayBackgroundSession.decoderFrameReady=false
++                    updateDebugOverlays()
+         setConnectionStage(reason)
+         Log.i(TAG, "$reason; rebuilding stack at ${size.width}x${size.height}")
+         val generation = ++restartGeneration
+@@ -3613,6 +3654,8 @@
+                 activeScreenStreamTypes.add(type)
+             } else {
+                 activeScreenStreamTypes.remove(type)
++                if(activeScreenStreamTypes.isEmpty()) { carPlayUi.disconnected(restartGeneration);CarPlayBackgroundSession.frameReady=false
++                    CarPlayBackgroundSession.decoderFrameReady=false }
+             }
+             if (type == SCREEN_TYPE_ALT) {
+                 Log.i(ClusterMapPresentation.TAG, "cluster stream active=$active")
+@@ -3639,13 +3682,26 @@
+ 
+     private fun setConnectionStage(message: String) {
+         latestStage = message
+-        stageStatusView?.text = friendlyStage(message)
++        carPlayUi.stage(message)
++        stageStatusView?.text = carPlayUi.error ?: carPlayUi.title
++        phoneTitleView?.text=controller?.boundPhoneName() ?: DiPlayPreferences.phoneName(this)
++        progressStepsView?.text=if(!wirelessEnabled) "USB · 正在建立连接\n画面就绪后自动进入 CarPlay" else
++            "蓝牙 · "+(if(controller?.boundBluetoothAddress()!=null) "✓ 手机已确认" else "正在确认手机")+"\n网络 · "+(if(controller?.boundNetworkReady()==true) "✓ 已准备" else "等待网络")+"\n画面 · "+if(carPlayUi.firstFrameReceived) "已就绪" else "等待首帧"
+         updateDebugOverlays()
+     }
+ 
+     private fun updateDebugOverlays() {
+         statusScrollView?.visibility = View.GONE
+-        connectionPanel?.visibility = if (activeScreenStreamTypes.isEmpty()) View.VISIBLE else View.GONE
++        val showVideo=carPlayUi.firstFrameReceived
++        projectionReturn?.visibility=if(showVideo) View.VISIBLE else View.GONE
++        connectionPanel?.let { panel ->
++            if(showVideo && panel.visibility==View.VISIBLE && !projectionFadeRunning) {
++                projectionFadeRunning=true
++                panel.animate().alpha(0f).setDuration(180).withEndAction { projectionFadeRunning=false;if(carPlayUi.firstFrameReceived) panel.visibility=View.GONE }.start()
++            } else if(!showVideo) {
++                panel.animate().cancel();projectionFadeRunning=false;panel.alpha=1f;panel.visibility=View.VISIBLE
++            }
++        }
+     }
+ 
+     private fun friendlyStage(message: String): String = when {
+@@ -3821,6 +3877,8 @@
+ /** Process-local hand-off for keeping the CarPlay session alive while no Activity is visible. */
+ internal object CarPlayBackgroundSession {
+     @Volatile var active = false
++    @Volatile var frameReady = false
++    @Volatile var decoderFrameReady = false
+     private var closingController: CarPlayController? = null
+     @Synchronized fun beginClosing(candidate: CarPlayController?) { if (candidate != null) closingController = candidate }
+     @Synchronized fun closed(candidate: CarPlayController?) { if (closingController === candidate) closingController = null }
+@@ -3892,6 +3950,8 @@
+         sink = null
+         if (!keepOwner) { stopAction = null; owner = null }
+         active = false
++        frameReady = false
++        decoderFrameReady = false
+         width = 0
+         height = 0
+         display = null
+diff --git a/common/src/main/java/com/shilapi/xcertplay/CarPlayShell.kt b/common/src/main/java/com/shilapi/xcertplay/CarPlayShell.kt
+new file mode 100644
+--- /dev/null
++++ b/common/src/main/java/com/shilapi/xcertplay/CarPlayShell.kt
+@@ -0,0 +1,43 @@
++package com.shilapi.xcertplay
++
++import android.content.Context
++import android.graphics.Color
++import android.graphics.Typeface
++import android.graphics.drawable.GradientDrawable
++import android.view.Gravity
++import android.view.View
++import android.widget.*
++import java.text.SimpleDateFormat
++import java.util.Date
++import java.util.Locale
++
++/** Shared Android View shell; no network work, demo devices or branded artwork. */
++internal object CarPlayShell {
++    val background=Color.rgb(10,14,21)
++    val cardColor=Color.rgb(28,34,44)
++    val text=Color.rgb(241,244,250)
++    val muted=Color.rgb(167,177,193)
++    fun dp(c: Context,n: Int)=(n*c.resources.displayMetrics.density).toInt()
++    fun column(c: Context)=LinearLayout(c).apply { orientation=LinearLayout.VERTICAL }
++    fun label(c: Context,s: String,size: Float=20f)=TextView(c).apply { text=s;textSize=size;setTextColor(CarPlayShell.text);typeface=Typeface.create("sans-serif",Typeface.NORMAL);setPadding(0,dp(c,8),0,dp(c,8)) }
++    fun shape(c: Context,color: Int)=GradientDrawable().apply { setColor(color);cornerRadius=dp(c,24).toFloat() }
++    fun card(c: Context)=column(c).apply { background=shape(c,cardColor);setPadding(dp(c,28),dp(c,22),dp(c,28),dp(c,22));elevation=dp(c,2).toFloat() }
++    fun button(c: Context,s: String,action: ()->Unit)=Button(c).apply { text=s;isAllCaps=false;textSize=19f;setTextColor(CarPlayShell.text);background=shape(c,Color.rgb(47,59,76));minHeight=dp(c,60);setPadding(dp(c,22),dp(c,12),dp(c,22),dp(c,12));setOnClickListener { action() } }
++    fun layout(c: Context,page: String,onNavigate: (String)->Unit,body: LinearLayout): View {
++        val root=column(c).apply { setBackgroundColor(CarPlayShell.background);setPadding(dp(c,24),dp(c,12),dp(c,24),dp(c,16)) }
++        val header=LinearLayout(c).apply { gravity=Gravity.CENTER_VERTICAL }
++        header.addView(label(c,"PSA CarPlay",27f),LinearLayout.LayoutParams(0,dp(c,64),1f))
++        header.addView(label(c,SimpleDateFormat("HH:mm",Locale.getDefault()).format(Date()),22f))
++        root.addView(header)
++        val row=LinearLayout(c)
++        val compact=c.resources.configuration.screenHeightDp<500
++        val nav=column(c).apply { setPadding(0,dp(c,14),dp(c,22),0) }
++        listOf("home" to "CarPlay","phones" to "手机","connection" to "连接","settings" to "设置","diagnostics" to "诊断").forEach { (key,name)->
++            nav.addView(button(c,name) { onNavigate(key) }.apply { if(page==key) background=shape(c,Color.rgb(64,82,108)) },LinearLayout.LayoutParams(-1,dp(c,if(compact) 48 else 64)).apply { bottomMargin=dp(c,if(compact) 6 else 14) })
++        }
++        row.addView(nav,LinearLayout.LayoutParams(dp(c,if(c.resources.configuration.screenWidthDp<600) 104 else 156),-1))
++        val scroll=ScrollView(c).apply { isFillViewport=true;clipToPadding=false;setPadding(dp(c,18),dp(c,14),dp(c,12),dp(c,12));addView(body) }
++        row.addView(scroll,LinearLayout.LayoutParams(0,-1,1f))
++        root.addView(row,LinearLayout.LayoutParams(-1,0,1f));return root
++    }
++}
+diff --git a/common/src/main/java/com/shilapi/xcertplay/CarPlayUiState.kt b/common/src/main/java/com/shilapi/xcertplay/CarPlayUiState.kt
+new file mode 100644
+--- /dev/null
++++ b/common/src/main/java/com/shilapi/xcertplay/CarPlayUiState.kt
+@@ -0,0 +1,38 @@
++package com.shilapi.xcertplay
++
++/** Presentation gate; transport/session readiness alone never exposes the video. */
++internal class CarPlayUiState {
++    var generation=0; private set
++    var decoderFrame=false; private set
++    var textureFrame=false; private set
++    var error: String?=null; private set
++    var title="等待手机"; private set
++    val firstFrameReceived get()=decoderFrame && textureFrame && error==null
++    fun reset(next: Int, renderedBefore: Boolean=false) { generation=next;decoderFrame=renderedBefore;textureFrame=false;error=null;title="正在连接 iPhone" }
++    fun stage(message: String) { if(error==null && !firstFrameReceived) title=ConnectionUiState.friendly(message) }
++    fun decoded(current: Int) { if(current==generation) { decoderFrame=true;error=null } }
++    fun textureUpdated(current: Int) { if(current==generation && decoderFrame) { textureFrame=true;error=null;title="CarPlay 已连接" } }
++    fun timeout(current: Int) { if(current==generation && !firstFrameReceived) { error="未收到 CarPlay 画面，请重新连接";title="连接异常" } }
++    fun disconnected(current: Int) { reset(current);title="等待连接" }
++}
++internal object ConnectionUiState {
++    fun friendly(raw: String): String = when {
++        raw.contains("FIRST_FRAME_TIMEOUT") -> "未收到 CarPlay 画面，请重新连接"
++        raw.contains("first frame",true) -> "正在启动 CarPlay，等待画面…"
++        raw.contains("HOTSPOT_FAILED",true) || raw.contains("SOFTAP_START_FAILED",true) || raw.contains("热点不可用") -> "车机热点不可用，请开启热点或检查配置"
++        raw.contains("FIRST_TCP_TIMEOUT") -> "未收到 iPhone 的无线连接"
++        raw.contains("Failed",true) || raw.contains("error",true) || raw.contains("失败") -> "连接失败，请重试或查看诊断"
++        raw.contains("不可用") || raw.contains("未验证") || raw.contains("权限") -> "连接条件未就绪，请检查连接设置和权限"
++        raw.contains("人工重连") || raw.contains("禁止新控制器") || raw.contains("连接已暂停") -> "连接已暂停，请稍后重试或查看诊断"
++        raw.contains("热点") || raw.contains("SoftAP",true) -> "正在准备车机热点"
++        raw.contains("Bluetooth",true) || raw.contains("蓝牙") -> "正在确认 iPhone"
++        raw.contains("AirPlay",true) || raw.contains("session active",true) -> "正在启动 CarPlay，等待画面…"
++        raw.contains("LAN",true) || raw.contains("network",true) || raw.contains("无线连接") -> "正在准备无线网络"
++        raw.contains("connected",true) || raw.contains("已连接") -> "正在启动 CarPlay"
++        raw.contains("reconnect",true) || raw.contains("重新连接") -> "正在重新连接"
++        raw.contains("Waiting",true) || raw.contains("等待") -> "等待手机"
++        else -> "正在连接 iPhone"
++    }
++}
++internal data class SettingsUiState(val autoConnect: Boolean,val mode: String)
++internal data class DeviceUiState(val name: String,val address: String,val iphone: Boolean,val connected: Boolean?,val bound: Boolean=false)
+diff --git a/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt b/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
+--- a/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
++++ b/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
+@@ -67,11 +67,24 @@
+     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+         connect(notificationTransport)
+     }
++    private var networkStatusView: TextView?=null
++    private val networkReadPending=java.util.concurrent.atomic.AtomicBoolean()
++    private var bluetoothReceiverRegistered=false
++    private val bluetoothUiReceiver=object: android.content.BroadcastReceiver() {
++        override fun onReceive(context: android.content.Context,intent: Intent) { if(page=="phones") render() }
++    }
++    private var phoneUiKey=""
+     private val tick = object : Runnable {
+-        override fun run() { refreshStatus(); handler.postDelayed(this, 1000) }
++        override fun run() {
++            refreshStatus()
++            if(page=="home") refreshNetworkCard()
++            val key=CarPlayBackgroundSession.snapshot()?.controller?.boundBluetoothAddress()+com.shilapi.xcertplay.orchestration.PsaConnectionState.current()
++            if(page=="phones" && key!=phoneUiKey) { phoneUiKey=key;render() }
++            handler.postDelayed(this,1000)
++        }
+     }
+     private val bluetoothPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+-        if (granted) choosePhone() else permissionHelp(getString(R.string.nearby_devices), getString(R.string.allow_nearby_devices_so_diplay_can_connect_to_your_paired))
++        if (granted) { page="phones";render() } else permissionHelp(getString(R.string.nearby_devices), getString(R.string.allow_nearby_devices_so_diplay_can_connect_to_your_paired))
+     }
+     private val locationPermission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+         if (hasPreciseLocation()) return@registerForActivityResult reconnectForLocation()
+@@ -92,7 +105,7 @@
+ 
+     override fun onCreate(savedInstanceState: Bundle?) {
+         super.onCreate(savedInstanceState)
+-            ?: intent.getBooleanExtra("psa_hotspot_return", false)
++        hotspotManualApproved=savedInstanceState?.getBoolean("hotspot_approved") ?: intent.getBooleanExtra("psa_hotspot_return",false)
+         languagePreferenceAtCreate = AppLocale.preference(this)
+         com.shilapi.xcertplay.hud.BydNavigationOutputs.onAppOpened(applicationContext)
+         WindowCompat.setDecorFitsSystemWindows(window, true)
+@@ -101,12 +114,27 @@
+             isAppearanceLightStatusBars = false
+             hide(WindowInsetsCompat.Type.statusBars())
+         }
+-        setupError = runCatching { DiPlayBootstrap.ensure(this) }.exceptionOrNull()?.let {
+-            android.util.Log.e("DiPlaySetup", "CarPlay authentication could not be loaded", it)
+-            getString(R.string.setup_error_auth)
+-        }
+         page = savedInstanceState?.getString("page") ?: intent.getStringExtra("page") ?: "home"
+         render()
++        setupError="正在准备应用…"
++        Thread({
++            val error=runCatching { DiPlayBootstrap.ensure(this) }.exceptionOrNull()
++            runOnUiThread {
++                if(isFinishing || isDestroyed) return@runOnUiThread
++                setupError=if(error!=null) "应用认证不可用，请查看诊断" else null
++                render()
++                if(error==null && DiPlayPreferences.autoConnect(this) && intent.getStringExtra("page")==null && !CarPlayBackgroundSession.hasSession() && !CarPlayBackgroundSession.startBlocked()) connect(AirPlayPersistence.loadWirelessEnabled(this))
++            }
++        },"app-provisioning").start()
++        val filter=android.content.IntentFilter().apply {
++            addAction(android.bluetooth.BluetoothDevice.ACTION_ACL_CONNECTED)
++            addAction(android.bluetooth.BluetoothDevice.ACTION_ACL_DISCONNECTED)
++            addAction(android.bluetooth.BluetoothDevice.ACTION_BOND_STATE_CHANGED)
++        }
++        runCatching {
++            if(Build.VERSION.SDK_INT>=33) registerReceiver(bluetoothUiReceiver,filter,android.content.Context.RECEIVER_EXPORTED) else registerReceiver(bluetoothUiReceiver,filter)
++            bluetoothReceiverRegistered=true
++        }
+         handleWirelessRecovery()
+         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+             override fun handleOnBackPressed() {
+@@ -132,6 +160,12 @@
+     override fun onStart() {
+         super.onStart()
+         CenterMapOverlay.onDiPlayScreenShown()
++    }
++
++    override fun onDestroy() {
++        if(bluetoothReceiverRegistered) runCatching { unregisterReceiver(bluetoothUiReceiver) }
++        handler.removeCallbacks(tick)
++        super.onDestroy()
+     }
+ 
+     override fun onStop() {
+@@ -169,106 +203,131 @@
+         if (!initialLaunch && (page == "home" || page == "settings" || page == "connection")) render()
+         if (initialLaunch) {
+             initialLaunch = false
+-            if (DiPlayPreferences.autoConnect(this) && intent.getStringExtra("page") == null &&
+-                !CarPlayBackgroundSession.startBlocked()) {
+-                handler.post { connect(AirPlayPersistence.loadWirelessEnabled(this)) }
+-            }
++
+         }
+     }
+     override fun onPause() { handler.removeCallbacks(tick); super.onPause() }
+ 
+     private fun render() {
+-        status = null; connectButton = null; disconnectButton = null; lastRunning = null
+-        val scroll = ScrollView(this).apply { setBackgroundColor(BG); isFillViewport = true; clipToPadding = false }
+-        val content = column().apply { setPadding(dp(32), dp(24), dp(32), dp(32)) }
+-        scroll.addView(content)
+-        val header = row().apply { gravity = Gravity.CENTER_VERTICAL }
+-        header.addView(ImageView(this).apply { setImageResource(R.drawable.ic_carplay); contentDescription = getString(R.string.carplay) }, LinearLayout.LayoutParams(dp(36), dp(36)))
+-        header.addView(label(getString(R.string.diplay), 26, TEXT, true).apply { setPadding(dp(12), 0, 0, 0) }, LinearLayout.LayoutParams(0, dp(56), 1f))
+-        header.addView(button(if (page == "home") getString(R.string.car_home) else getString(R.string.back), false) {
+-            if (page == "home") startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME))
+-            else { page = "home"; render() }
+-        }, LinearLayout.LayoutParams(dp(130), dp(56)))
+-        content.addView(header)
+-        content.addView(space(24))
+-        when (page) {
++        status=null;connectButton=null;disconnectButton=null;networkStatusView=null;lastRunning=null
++        val content=CarPlayShell.column(this)
++        when(page) {
++            "phones" -> phones(content)
+             "connection" -> connectionSetup(content)
+             "settings" -> settings(content)
+-            "about" -> about(content)
++            "advanced" -> advancedSettings(content)
++            "diagnostics" -> diagnostics(content)
+             else -> home(content)
+         }
+-        setContentView(scroll)
++        setContentView(CarPlayShell.layout(this,page,{ page=it;render() },content))
+         refreshStatus()
+     }
+ 
+     private fun home(content: LinearLayout) {
+-        content.addView(button("详细连接状态 / USB口校准", false) { startActivity(Intent(this, PsaStatusActivity::class.java)) }, matchButton())
+-        val wide = resources.configuration.screenWidthDp >= 850
+-        val body = column()
+-        val left = column()
+-        left.addView(label(getString(R.string.your_phone_your_drive), 12, ACCENT, true).apply { letterSpacing = .16f })
+-        left.addView(label(getString(R.string.a_familiar_drive), if (wide) 42 else 36, TEXT, true).apply { setPadding(0, dp(12), 0, dp(10)) })
+-        left.addView(label(getString(R.string.your_maps_music_and_conversations_carplay_right_here_on_yo), 19, MUTED))
+-        val card = card()
+-        card.addView(label(getString(R.string.wireless_carplay), 12, ACCENT, true).apply { letterSpacing = .12f })
+-        status = label(getString(R.string.ready_when_you_are), 24, TEXT, true).apply { setPadding(0, dp(10), 0, dp(16)) }
+-        card.addView(status)
+-        connectButton = button(getString(R.string.connect_phone), true) {
+-            if (CarPlayBackgroundSession.hasSession()) openProjection()
+-            else connect(AirPlayPersistence.loadWirelessEnabled(this))
+-        }
+-        connectionModeControls(card)
+-        card.addView(connectButton, matchButton())
+-        val connectionHint = "USB / 车机系统热点 / 现有局域网；无线连接不要求互联网"
+-        card.addView(label(connectionHint, 15, MUTED).apply { setPadding(0, dp(14), 0, 0) })
+-
+-        card.addView(button(getString(R.string.choose_iphone), false) { choosePhone() }, matchButton(16, 56))
+-        disconnectButton = button(getString(R.string.disconnect), false) {
+-            disconnectButton?.isEnabled = false
+-            CarPlayBackgroundSession.stop { runOnUiThread { refreshStatus() } }
+-        }.apply { visibility = View.GONE }
+-        card.addView(disconnectButton, matchButton(10, 56))
+-        val right = column().apply { gravity = Gravity.CENTER_HORIZONTAL }
+-        val logo = ImageView(this).apply {
+-            setImageResource(R.drawable.ic_carplay)
+-            contentDescription = getString(R.string.carplay_icon)
+-            scaleType = ImageView.ScaleType.FIT_CENTER
+-        }
+-        val branding = column().apply {
+-            gravity = Gravity.CENTER
+-            addView(logo, LinearLayout.LayoutParams(dp(96), dp(96)))
+-        }
+-        right.addView(button(getString(R.string.connect_with_usb), false) { connect(false) }, matchButton())
+-        right.addView(label(getString(R.string.plug_your_iphone_into_a_usb_data_port_allow_carplay_when_y), 14, MUTED).apply { gravity = Gravity.CENTER; setPadding(dp(8), dp(10), dp(8), dp(24)) })
+-        right.addView(button(getString(R.string.settings), false) { page = "settings"; render() }, matchButton())
+-        right.addView(label(getString(R.string.make_diplay_feel_right_for_your_car), 14, MUTED).apply { gravity = Gravity.CENTER; setPadding(0, dp(10), 0, dp(24)) })
+-        right.addView(label("${getString(R.string.home_public_preview)}${version()}", 12, MUTED).apply { letterSpacing = .08f })
+-        if (wide) {
+-            // Both rows share column widths. The USB button starts at the wireless
+-            // card's top edge, independently of hero wrapping or font scaling.
+-            fun columns(first: View, second: View, stretchSecond: Boolean = false) = row().apply {
+-                gravity = Gravity.TOP
+-                addView(first, LinearLayout.LayoutParams(0, -2, 1.6f))
+-                addView(space(40), LinearLayout.LayoutParams(dp(40), 1))
+-                addView(second, LinearLayout.LayoutParams(0, if (stretchSecond) -1 else -2, 1f))
+-            }
+-            body.addView(columns(left, branding, true))
+-            body.addView(space(26))
+-            body.addView(columns(card, right))
+-        } else {
+-            body.addView(left)
+-            body.addView(space(26))
+-            body.addView(card)
+-            body.addView(space(26))
+-            body.addView(branding)
+-            body.addView(space(24))
+-            body.addView(right)
+-        }
+-        setupError?.let { body.addView(label(it, 16, WARNING).apply { setPadding(0, dp(16), 0, 0) }) }
+-        content.addView(body)
++        content.addView(CarPlayShell.label(this,"CarPlay",38f))
++        content.addView(CarPlayShell.label(this,"你的手机，你的旅程",19f))
++        val card=CarPlayShell.card(this)
++        card.addView(CarPlayShell.label(this,CarPlayBackgroundSession.snapshot()?.controller?.boundPhoneName() ?: DiPlayPreferences.phoneName(this),28f))
++        status=CarPlayShell.label(this,"等待连接",24f);card.addView(status)
++        card.addView(CarPlayShell.label(this,"蓝牙确认手机后建立连接，画面就绪后自动进入 CarPlay。",18f))
++        connectButton=CarPlayShell.button(this,"连接手机") {
++            if(CarPlayBackgroundSession.hasSession()) openProjection() else connect(AirPlayPersistence.loadWirelessEnabled(this))
++        };card.addView(connectButton,matchButton(18,64))
++        disconnectButton=CarPlayShell.button(this,"断开 CarPlay") { CarPlayBackgroundSession.stop { runOnUiThread { refreshStatus() } } }.apply { visibility=View.GONE }
++        card.addView(disconnectButton,matchButton(12,60));content.addView(card)
++        val network=CarPlayShell.card(this)
++        network.addView(CarPlayShell.label(this,"车机热点 / 现有网络",23f))
++        networkStatusView=CarPlayShell.label(this,"正在检测网络状态…",18f);network.addView(networkStatusView)
++        refreshNetworkCard()
++        network.addView(CarPlayShell.button(this,"查看连接方式") { page="connection";render() },matchButton(12,60))
++        content.addView(space(20));content.addView(network)
++        setupError?.let { content.addView(CarPlayShell.label(this,it,18f)) }
++    }
++
++    private fun refreshNetworkCard() {
++        val label=networkStatusView ?: return
++        if(!networkReadPending.compareAndSet(false,true)) return
++        Thread({
++            val text=if(AirPlayPersistence.loadWirelessHotspotMode(this)==WirelessHotspotMode.SYSTEM_HOTSPOT) {
++                runCatching {
++                    val live=com.shilapi.xcertplay.network.ExistingSystemAp(this).snapshot(getSharedPreferences("psa_hotspot",0).getString("interface","").orEmpty())
++                    if(live.enabled==false || live.link==null) "车机热点未开启，请打开网络设置"
++                    else "车机热点 · "+(live.actualFrequency?.let { if(it>=5000) "5 GHz" else "2.4 GHz" } ?: "频段待确认")+" · "+if(CarPlayBackgroundSession.snapshot()?.controller?.currentAirPlaySession()!=null) "iPhone 已连接" else "等待 iPhone"
++                }.getOrDefault("热点状态不可读，请查看连接页")
++            } else if(AirPlayPersistence.loadConnectionMode(this)==com.shilapi.xcertplay.orchestration.ConnectionMode.USB) "USB CarPlay · 等待数据线"
++            else "无线网络 · "+if(CarPlayBackgroundSession.frameReady) "已连接" else "等待连接"
++            runOnUiThread { if(networkStatusView===label) label.text=text;networkReadPending.set(false) }
++        },"network-card-ui").start()
++    }
++
++    private fun phones(content: LinearLayout) {
++        content.addView(CarPlayShell.label(this,"手机",36f))
++        content.addView(CarPlayShell.button(this,"打开蓝牙设置") { runCatching { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }.onFailure { toast("系统蓝牙设置不可用") } },matchButton())
++        val list=CarPlayShell.column(this);content.addView(list)
++        list.addView(CarPlayShell.label(this,"正在读取已配对设备…",20f))
++        Thread({
++            val bound=CarPlayBackgroundSession.snapshot()?.controller?.boundBluetoothAddress()
++            val devices=runCatching { BluetoothPhoneRepository.read(this,bound,DiPlayPreferences.phoneAddress(this)) }
++            runOnUiThread {
++                if(isFinishing || isDestroyed || page!="phones") return@runOnUiThread
++                list.removeAllViews()
++                devices.onFailure {
++                    list.addView(CarPlayShell.label(this,"请允许蓝牙设备权限，再重新检测。",20f))
++                    list.addView(CarPlayShell.button(this,"授权 / 重新检测") {
++                        if(Build.VERSION.SDK_INT>=31) bluetoothPermission.launch(Manifest.permission.BLUETOOTH_CONNECT) else render()
++                    },matchButton())
++                }.onSuccess { rows ->
++                    if(rows.none { it.iphone }) list.addView(CarPlayShell.label(this,"未发现已配对的 iPhone，请先在系统蓝牙中完成配对。",20f))
++                    rows.forEach { device ->
++                        val card=CarPlayShell.card(this)
++                        card.addView(CarPlayShell.label(this,device.name,25f))
++                        val state=if(device.bound) "✓ 当前 CarPlay 手机 · 已确认" else if(device.address==DiPlayPreferences.phoneAddress(this) && AirPlayPersistence.loadWirelessEnabled(this) && CarPlayBackgroundSession.hasSession()) "正在确认 iPhone…" else if(device.connected==true) "已连接 · 已配对" else if(device.connected==false) "已配对 · 未连接" else "已配对 · 连接状态待确认"
++                        card.addView(CarPlayShell.label(this,(if(device.iphone) "iPhone · " else "蓝牙设备 · ")+state,18f))
++                        card.addView(CarPlayShell.button(this,"设为本次连接手机") {
++                            if(CarPlayBackgroundSession.hasSession()) { toast("先取消或断开当前连接，再选择手机");return@button }
++                            DiPlayPreferences.savePhone(this,device.address,device.name);getSharedPreferences("diplay",0).edit().putString("next_phone_address",device.address).apply();toast("已选择 ${device.name}");page="home";render()
++                        },matchButton(12,60))
++                        card.addView(CarPlayShell.button(this,"设备详情") {
++                            AlertDialog.Builder(this).setTitle(device.name).setMessage("设备地址：${device.address}\n配对状态：已配对\n连接状态：${device.connected ?: "系统不可读"}").setPositiveButton("完成",null).show()
++                        },matchButton(8,56))
++                        list.addView(card);list.addView(space(14))
++                    }
++                }
++            }
++        },"paired-phone-ui").start()
++    }
++
++    private fun diagnostics(content: LinearLayout) {
++        content.addView(CarPlayShell.label(this,"连接诊断",36f))
++        com.shilapi.xcertplay.orchestration.PsaConnectionState.rows().forEach { (key,value) -> content.addView(CarPlayShell.label(this,"$key  ·  $value",18f)) }
++        content.addView(CarPlayShell.button(this,"查看详细状态") { startActivity(Intent(this,PsaStatusActivity::class.java)) },matchButton(12,60))
++        content.addView(CarPlayShell.button(this,"导出日志") { exportDiagnostics() },matchButton(12,60))
++        content.addView(CarPlayShell.button(this,"复制诊断信息") {
++            val text=com.shilapi.xcertplay.orchestration.PsaConnectionState.rows().joinToString("\n") { "${it.first}: ${it.second}" }
++            (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(android.content.ClipData.newPlainText("PSA CarPlay",text));toast("诊断信息已复制")
++        },matchButton(12,60))
+     }
+ 
+     private fun settings(content: LinearLayout) {
++        content.addView(CarPlayShell.label(this,"设置",36f))
++        section(content,"连接",R.drawable.ic_dp_connection) { card ->
++            toggle(card,"打开应用后自动连接","主页显示后在后台连接手机",DiPlayPreferences.autoConnect(this)) { DiPlayPreferences.saveAutoConnect(this,it) }
++            card.addView(CarPlayShell.button(this,"首选连接方式") { page="connection";render() },matchButton(12,60))
++        }
++        section(content,"视频",R.drawable.ic_dp_display) { card ->
++            carPlaySizeControl(card)
++            choice(card,"帧率",listOf("30 fps","60 fps"),if(AirPlayPersistence.loadFps(this)==60) 1 else 0) { AirPlayPersistence.saveFps(this,if(it==1) 60 else 30) }
++            choice(card,"分辨率",listOf("100% · 默认","80%","60%"),when(AirPlayPersistence.loadDisplayScaleTenths(this)) { 8->1;6->2;else->0 }) { AirPlayPersistence.saveDisplayScaleTenths(this,listOf(10,8,6)[it]) }
++        }
++        section(content,"音频",R.drawable.ic_dp_display) { card -> mediaChannelControl(card);navigationChannelControl(card) }
++        section(content,"系统",R.drawable.ic_dp_automation) { card ->
++            toggle(card,"开机启动","由车机系统启动权限决定",AirPlayPersistence.loadAutoStartOnBoot(this)) { AirPlayPersistence.saveAutoStartOnBoot(this,it) }
++            toggle(card,"保持屏幕唤醒","连接界面和投屏期间",getSharedPreferences("diplay",0).getBoolean("keep_screen_on",true)) { getSharedPreferences("diplay",0).edit().putBoolean("keep_screen_on",it).apply() }
++        }
++        content.addView(CarPlayShell.button(this,"高级设置") { page="advanced";render() },matchButton(12,60))
++    }
++
++    private fun advancedSettings(content: LinearLayout) {
+         content.addView(label(getString(R.string.your_drive_your_way), 34, TEXT, true))
+         content.addView(label(getString(R.string.apply_reconnects_carplay_for_size_resolution_music_buffer), 17, MUTED).apply { setPadding(0, dp(8), 0, dp(24)) })
+         section(content, getString(R.string.connection_setup), R.drawable.ic_dp_connection) { card ->
+@@ -528,58 +587,46 @@
+     }
+ 
+ 
+-    private fun connectionSetup(content: LinearLayout) {
+-        content.addView(label(getString(R.string.connection_setup), 34, TEXT, true))
+-        content.addView(label(getString(R.string.set_up_once_your_details_stay_saved_for_the_next_drive_cha), 17, MUTED).apply { setPadding(0, dp(8), 0, dp(24)) })
+-        section(content, getString(R.string.s_1_choose_your_connection)) { card -> wirelessLinkControls(card) }
+-        section(content, getString(R.string.s_2_pair_your_iphone)) { card ->
+-            card.addView(label(getString(R.string.keep_bluetooth_and_wi_fi_on_your_iphone_pair_with_the_car), 16, MUTED))
+-            card.addView(button("${getString(R.string.choose_iphone_prefix)}${DiPlayPreferences.phoneName(this)}", false) { choosePhone() }, matchButton(12, 60))
+-            card.addView(button(getString(R.string.review_app_permissions), false) {
+-                openSystem(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+-            }, matchButton(12, 60))
+-        }
+-        section(content, getString(R.string.s_3_connect)) { card ->
+-            card.addView(label(getString(R.string.return_from_car_settings_to_diplay_then_connect_accept_the), 16, MUTED))
+-            card.addView(button(getString(R.string.connect_phone), true) { connect(AirPlayPersistence.loadWirelessEnabled(this)) }, matchButton(12, 60))
+-        }
+-        section(content, getString(R.string.prefer_a_cable)) { card ->
+-            card.addView(label(getString(R.string.use_a_usb_data_cable_and_the_car_s_usb_data_port_unlock_yo), 16, MUTED))
+-            card.addView(button(getString(R.string.connect_with_usb), false) { connect(false) }, matchButton(12, 60))
+-        }
+-    }
+-
+     private fun connectionModeControls(parent: LinearLayout) {
+-        val modes=com.shilapi.xcertplay.orchestration.ConnectionMode.entries
+-        val titles=listOf("自动（推荐）","无线 CarPlay · 车机专用热点","USB CarPlay","现有局域网（高级）")
+         val selected=AirPlayPersistence.loadConnectionMode(this)
+-        parent.addView(label("连接方式：${titles[modes.indexOf(selected)]}",18,TEXT,true))
+-        modes.forEachIndexed { index, mode -> parent.addView(button(titles[index],false) {
+-            if(CarPlayBackgroundSession.hasSession() || CarPlayBackgroundSession.startBlocked()) { toast("请先停止当前会话，等待退出后切换"); return@button }
+-            AirPlayPersistence.saveConnectionMode(this,mode)
+-            render()
+-        },matchButton(8,56)) }
+-    }
+-    private fun wirelessLinkControls(parent: LinearLayout) {
++        val modes=listOf(
++            com.shilapi.xcertplay.orchestration.ConnectionMode.AUTO to "自动 · 推荐",
++            com.shilapi.xcertplay.orchestration.ConnectionMode.WIRELESS_AP to "无线 CarPlay · 车机热点",
++            com.shilapi.xcertplay.orchestration.ConnectionMode.EXISTING_LAN to "现有局域网 · 高级兼容",
++            com.shilapi.xcertplay.orchestration.ConnectionMode.USB to "USB CarPlay"
++        )
++        modes.forEach { (mode,title) ->
++            parent.addView(CarPlayShell.button(this,if(selected==mode) "✓ $title" else title) {
++                AirPlayPersistence.saveConnectionMode(this,mode)
++                render()
++            },matchButton(12,64))
++        }
++    }
++
++    private fun connectionSetup(parent: LinearLayout) {
++        parent.addView(CarPlayShell.label(this,"连接",36f))
+         connectionModeControls(parent)
+-        if (!AirPlayPersistence.loadWirelessEnabled(this)) return
+-        val hotspot = AirPlayPersistence.loadWirelessHotspotMode(this) == WirelessHotspotMode.WIRELESS_AP
++        if(!AirPlayPersistence.loadWirelessEnabled(this)) {
++            parent.addView(CarPlayShell.label(this,"连接 USB 数据线，允许手机授权。画面就绪前保持本页面。",19f));return
++        }
++        val manual=AirPlayPersistence.loadWirelessHotspotMode(this)==WirelessHotspotMode.SYSTEM_HOTSPOT
++        val hotspot=AirPlayPersistence.loadConnectionMode(this)!=com.shilapi.xcertplay.orchestration.ConnectionMode.EXISTING_LAN
+         if(hotspot) {
+-            parent.addView(label("蓝牙确认手机后自动创建 5 GHz 专用热点。系统权限或 root 不可用时，请查看连接诊断。",16,MUTED))
+-            return
+-        }
+-        val prefs = getSharedPreferences(if(hotspot) "psa_hotspot" else "psa_lan", MODE_PRIVATE)
+-        parent.addView(label(if(hotspot) "仅使用系统已开启的热点。实时配置优先；手动补充未经系统核验，须确认本次连接。退出不关闭热点。" else "使用已有 LAN，不创建网络；当前 SSID 及接口会自动核验。",16,MUTED))
+-        parent.addView(button("查看当前真实网络信息",false) { showLiveNetwork(hotspot) },matchButton(8,56))
+-        parent.addView(button("打开系统 Wi-Fi 设置",false) { openCarClientWifiSettings() },matchButton(8,56))
+-        parent.addView(button("手动补充网络参数",false) {
+-            askHotspotCredentials(hotspot) { ssid,password -> prefs.edit().putString("ssid",ssid).putString("password",password).apply(); toast("参数已保存，启动时优先读取实时信息") }
+-        },matchButton(8,56))
+-        val ipv4 = prefs.getBoolean("ipv4_priority",false)
+-        parent.addView(button("地址策略：" + if(ipv4) "优先下发 IPv4；一次 IPv6 备用" else "原始双栈",false) {
+-            if (CarPlayBackgroundSession.hasSession() || CarPlayBackgroundSession.startBlocked()) toast("先停止会话并等待退出")
+-            else { prefs.edit().putBoolean("ipv4_priority",!ipv4).apply(); render() }
+-        },matchButton(8,56))
++            parent.addView(CarPlayShell.button(this,"车机热点 · 使用系统已开启的热点（推荐）") { AirPlayPersistence.saveWirelessHotspotMode(this,WirelessHotspotMode.SYSTEM_HOTSPOT);render() },matchButton(14,64))
++            parent.addView(CarPlayShell.button(this,"自动创建专用热点（高级，需权限）") { AirPlayPersistence.saveWirelessHotspotMode(this,WirelessHotspotMode.WIRELESS_AP);render() },matchButton(12,60))
++        }
++        parent.addView(CarPlayShell.label(this,if(manual) "请开启车机系统热点。配置不可读时补充真实参数，并确认本次连接。" else if(!hotspot) "现有局域网：使用当前网络，不创建热点。" else "蓝牙确认手机后创建专用热点。",19f))
++        parent.addView(CarPlayShell.button(this,"打开网络设置") { runCatching { startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS)) } },matchButton(12,60))
++        parent.addView(CarPlayShell.button(this,"重新检测 / 查看详情") { showLiveNetwork(hotspot) },matchButton(12,60))
++        if(manual || !hotspot) {
++            parent.addView(CarPlayShell.button(this,"补充网络名称与密码") {
++                askHotspotCredentials(hotspot) { name,password ->
++                    getSharedPreferences(if(hotspot) "psa_hotspot" else "psa_lan",0).edit().putString("ssid",name).putString("password",password).apply()
++                    hotspotManualApproved=hotspot;toast("参数已保存；仅本次连接人工确认")
++                }
++            },matchButton(12,60))
++        }
++        parent.addView(CarPlayShell.button(this,"连接手机") { connect(AirPlayPersistence.loadWirelessEnabled(this)) },matchButton(18,64))
+     }
+     private fun showLiveNetwork(hotspot: Boolean) {
+         Thread {
+@@ -943,13 +990,13 @@
+             CarPlayBackgroundSession.startBlocked() -> "等待重连 · 正在清理旧会话"
+             com.shilapi.xcertplay.orchestration.PsaConnectionState.current() == "等待重连" -> "等待连接"
+             setupError != null -> getString(R.string.setup_needs_attention)
+-            CarPlayBackgroundSession.active -> getString(R.string.carplay_connected)
+-            running -> getString(R.string.connecting_to_your_iphone)
++            CarPlayBackgroundSession.frameReady -> "CarPlay 已连接"
++            running -> ConnectionUiState.friendly(com.shilapi.xcertplay.orchestration.PsaConnectionState.current())
+             DiPlayPreferences.phoneAddress(this) != null -> "${getString(R.string.status_ready_for_prefix)}${DiPlayPreferences.phoneName(this)}"
+             else -> getString(R.string.ready_when_you_are)
+         }
+         if (lastRunning != running) {
+-            connectButton?.text = if (running) getString(R.string.open_carplay) else getString(R.string.connect_phone)
++            connectButton?.text = if (running) { if(CarPlayBackgroundSession.frameReady) "进入 CarPlay" else "查看连接进度" } else "连接手机"
+             disconnectButton?.visibility = if (running) View.VISIBLE else View.GONE
+             disconnectButton?.isEnabled = true
+             lastRunning = running
+@@ -1181,7 +1228,7 @@
+         }
+         parent.addView(button, matchButton(0, 60)); parent.addView(space(12))
+     }
+-    private fun card() = column().apply { background = rounded(SURFACE, BORDER); setPadding(dp(24), dp(24), dp(24), dp(24)) }
++    private fun card() = column().apply { background = CarPlayShell.shape(this@DiPlayActivity,CarPlayShell.cardColor); setPadding(dp(24), dp(24), dp(24), dp(24)) }
+     private fun column() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(-1, -2) }
+     private fun row() = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutParams = LinearLayout.LayoutParams(-1, -2) }
+     private fun label(value: String, size: Int, color: Int, bold: Boolean = false) = TextView(this).apply {
+@@ -1192,7 +1239,7 @@
+     private fun button(title: String, primary: Boolean, click: () -> Unit) = Button(this).apply {
+         text = title; isAllCaps = false; textSize = 18f; setTextColor(if (primary) BG else TEXT)
+         typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+-        background = android.graphics.drawable.RippleDrawable(ColorStateList.valueOf(0x336F9FD9), rounded(if (primary) ACCENT else SURFACE, if (primary) ACCENT else BORDER), null)
++        background = android.graphics.drawable.RippleDrawable(ColorStateList.valueOf(0x336F9FD9), CarPlayShell.shape(this@DiPlayActivity,if(primary) ACCENT else CarPlayShell.cardColor), null)
+         setPadding(dp(16), 0, dp(16), 0); minHeight = dp(56); stateListAnimator = null
+         setOnClickListener { click() }
+     }
+diff --git a/common/src/test/java/com/shilapi/xcertplay/CarPlayHostPreparationTest.kt b/common/src/test/java/com/shilapi/xcertplay/CarPlayHostPreparationTest.kt
+--- a/common/src/test/java/com/shilapi/xcertplay/CarPlayHostPreparationTest.kt
++++ b/common/src/test/java/com/shilapi/xcertplay/CarPlayHostPreparationTest.kt
+@@ -49,7 +49,7 @@
+ 
+     @Test fun streamEndRestoresOriginalPreparationPanel() {
+         stream(0, true)
+-        assertEquals(View.GONE, (field("connectionPanel") as View).visibility)
++        assertEquals(View.VISIBLE, (field("connectionPanel") as View).visibility)
+         stream(0, false)
+         assertEquals(View.VISIBLE, (field("connectionPanel") as View).visibility)
+     }
+diff --git a/common/src/test/java/com/shilapi/xcertplay/CarPlayShellStartupTest.kt b/common/src/test/java/com/shilapi/xcertplay/CarPlayShellStartupTest.kt
+new file mode 100644
+--- /dev/null
++++ b/common/src/test/java/com/shilapi/xcertplay/CarPlayShellStartupTest.kt
+@@ -0,0 +1,31 @@
++package com.shilapi.xcertplay
++
++import android.view.View
++import android.view.ViewGroup
++import android.widget.TextView
++import org.junit.Assert.*
++import org.junit.Test
++import org.junit.runner.RunWith
++import org.robolectric.Robolectric
++import org.robolectric.RuntimeEnvironment
++import org.robolectric.annotation.Config
++import org.robolectric.annotation.LooperMode
++
++@RunWith(org.robolectric.RobolectricTestRunner::class)
++@Config(sdk=[28])
++@LooperMode(LooperMode.Mode.PAUSED)
++class CarPlayShellStartupTest {
++    @Test fun coldLaunchShowsRealNavigationBeforePhoneExists() {
++        DiPlayPreferences.saveAutoConnect(RuntimeEnvironment.getApplication(),false)
++        val ready=DiPlayBootstrap::class.java.getDeclaredField("ready").apply { isAccessible=true };val old=ready.getBoolean(null);ready.setBoolean(null,true)
++        val lifecycle=Robolectric.buildActivity(DiPlayActivity::class.java)
++        try {
++            lifecycle.create().start().resume().visible()
++            val root=lifecycle.get().findViewById<ViewGroup>(android.R.id.content)
++            fun texts(v: View): List<String> = if(v is ViewGroup) (0 until v.childCount).flatMap { texts(v.getChildAt(it)) } else if(v is TextView) listOf(v.text.toString()) else emptyList()
++            val visible=texts(root)
++            listOf("PSA CarPlay","手机","连接","设置","诊断","连接手机").forEach { assertTrue(it,visible.contains(it)) }
++            assertTrue(root.isShown)
++        } finally { lifecycle.pause().stop().destroy();ready.setBoolean(null,old) }
++    }
++}
+diff --git a/common/src/test/java/com/shilapi/xcertplay/CarPlayUiStateTest.kt b/common/src/test/java/com/shilapi/xcertplay/CarPlayUiStateTest.kt
+new file mode 100644
+--- /dev/null
++++ b/common/src/test/java/com/shilapi/xcertplay/CarPlayUiStateTest.kt
+@@ -0,0 +1,14 @@
++package com.shilapi.xcertplay
++
++import org.junit.Assert.*
++import org.junit.Test
++
++class CarPlayUiStateTest {
++    @Test fun setupAndStatusNeverExposeVideo() { val s=CarPlayUiState();s.reset(1);s.stage("AirPlay connected; waiting for first frame");assertFalse(s.firstFrameReceived);assertTrue(s.title.contains("等待画面")) }
++    @Test fun decoderOnlyDoesNotExposeBlackTexture() { val s=CarPlayUiState();s.reset(1);s.decoded(1);assertFalse(s.firstFrameReceived) }
++    @Test fun actualTextureUpdateAfterDecoderOpensGate() { val s=CarPlayUiState();s.reset(1);s.decoded(1);s.textureUpdated(1);assertTrue(s.firstFrameReceived) }
++    @Test fun staleFrameCannotExposeNewSession() { val s=CarPlayUiState();s.reset(2);s.decoded(1);s.textureUpdated(1);assertFalse(s.firstFrameReceived) }
++    @Test fun reattachedSessionWaitsForItsNewTexture() { val s=CarPlayUiState();s.reset(2,true);assertFalse(s.firstFrameReceived);s.textureUpdated(2);assertTrue(s.firstFrameReceived) }
++    @Test fun timeoutLeavesActionableUi() { val s=CarPlayUiState();s.reset(1);s.timeout(1);assertFalse(s.firstFrameReceived);assertNotNull(s.error) }
++    @Test fun disconnectImmediatelyClosesGate() { val s=CarPlayUiState();s.reset(1);s.decoded(1);s.textureUpdated(1);s.disconnected(1);assertFalse(s.firstFrameReceived) }
++}
+diff --git a/common/src/test/java/com/shilapi/xcertplay/HotspotModeMigrationTest.kt b/common/src/test/java/com/shilapi/xcertplay/HotspotModeMigrationTest.kt
+--- a/common/src/test/java/com/shilapi/xcertplay/HotspotModeMigrationTest.kt
++++ b/common/src/test/java/com/shilapi/xcertplay/HotspotModeMigrationTest.kt
+@@ -15,7 +15,7 @@
+         app.getSharedPreferences("psa_lan", 0).edit().clear().commit()
+         for (old in listOf("WIFI_P2P", "LOCAL_ONLY_HOTSPOT", "MANUAL", "unknown")) {
+             prefs.edit().clear().putString("wireless_hotspot_mode", old).putString("manual_hotspot_ssid", "old").commit()
+-            assertEquals(WirelessHotspotMode.WIRELESS_AP, AirPlayPersistence.loadWirelessHotspotMode(app))
++            assertEquals(WirelessHotspotMode.SYSTEM_HOTSPOT, AirPlayPersistence.loadWirelessHotspotMode(app))
+             assertEquals(com.shilapi.xcertplay.orchestration.ConnectionMode.AUTO, AirPlayPersistence.loadConnectionMode(app))
+             assertNull(app.getSharedPreferences("psa_lan", 0).getString("ssid", null))
+         }
+diff --git a/mobile/build.gradle.kts b/mobile/build.gradle.kts
+--- a/mobile/build.gradle.kts
++++ b/mobile/build.gradle.kts
+@@ -17,8 +17,8 @@
+         applicationId = "com.psa.carplay"
+         minSdk = 28
+         targetSdk = 37
+-        versionCode = 215
+-        versionName = "0.2.14-softap-ui-fix"
++        versionCode = 216
++        versionName = "0.2.15-ui"
+ 
+     }
+ 
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/network/ManualHotspotManager.kt b/shared/src/main/java/com/shilapi/xcertplay/network/ManualHotspotManager.kt
+new file mode 100644
+--- /dev/null
++++ b/shared/src/main/java/com/shilapi/xcertplay/network/ManualHotspotManager.kt
+@@ -0,0 +1,6 @@
++package com.shilapi.xcertplay.network
++
++import android.content.Context
++
++/** Existing system-owned AP: reuses the verified PSA reader; never starts/stops Wi-Fi. */
++class ManualHotspotManager(context: Context,confirmed: Boolean,log: (String)->Unit={}): LanNetworkManager by SystemHotspotManager(context,confirmed,log)
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt b/shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt
+--- a/shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt
++++ b/shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt
+@@ -386,6 +386,13 @@
+         }
+     }
+ 
++    fun currentAirPlaySession(): AirPlaySession? = activeSession
++
++    fun boundPhoneName(): String? = boundPhone?.bluetoothDeviceName
++    fun boundNetworkReady(): Boolean = boundPhone?.expectedNetworkInterface!=null
++
++    fun boundBluetoothAddress(): String? = boundPhone?.bluetoothAddress
++
+     fun sessionTransport(): CarPlayTransport = config.transport
+ 
+     fun recordFirstAudio() { timeline?.mark("FIRST_AUDIO") }
+@@ -1952,7 +1959,7 @@
+         val manager: com.shilapi.xcertplay.network.LanNetworkManager = if(config.wirelessHotspotMode == WirelessHotspotMode.WIRELESS_AP)
+             com.shilapi.xcertplay.network.SessionSoftApManager(appContext,::debugLog)
+         else if (config.wirelessHotspotMode == WirelessHotspotMode.SYSTEM_HOTSPOT)
+-            com.shilapi.xcertplay.network.SystemHotspotManager(appContext, config.hotspotManualConfirmed, ::debugLog)
++            com.shilapi.xcertplay.network.ManualHotspotManager(appContext, config.hotspotManualConfirmed, ::debugLog)
+         else com.shilapi.xcertplay.network.ExistingWifiManager(appContext,
+             settings.getString("ssid", "").orEmpty(), settings.getString("password", "").orEmpty(),
+             ::debugLog, { if (!isStaleWirelessRun(generation)) fail(com.shilapi.xcertplay.network.LanConnectionException(
+@@ -1994,6 +2001,11 @@
+ 
+     private fun selectWirelessBluetoothDevice(adapter: BluetoothAdapter): BluetoothDevice {
+         val bonded = adapter.bondedDevices.orEmpty()
++        val uiPrefs=appContext.getSharedPreferences("diplay",0)
++        uiPrefs.getString("next_phone_address",null)?.let { selected ->
++            uiPrefs.edit().remove("next_phone_address").apply()
++            bonded.firstOrNull { it.address.equals(selected,true) }?.let { return it }
++        }
+         val iPhones = bonded.filter { device ->
+             device.name?.contains("iPhone", ignoreCase = true) == true
+         }
+@@ -2017,6 +2029,9 @@
+                 "Multiple connected iPhones found: " +
+                     connectedIPhones.joinToString { "${it.name ?: "iPhone"} (${it.address})" },
+             )
++        }
++        uiPrefs.getString("recent_success_address",null)?.let { selected ->
++            bonded.firstOrNull { it.address.equals(selected,true) }?.let { return it }
+         }
+         config.wirelessBluetoothDeviceAddress?.let { selected ->
+             return bonded.firstOrNull { it.address.equals(selected, ignoreCase = true) }
