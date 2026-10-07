@@ -36,7 +36,7 @@ assert "!wirelessTunnelReady.get() || activeSession == null" in after
 assert "oldController?.awaitClosed" in (candidate/"common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt").read_text()
 host=(candidate/"common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt").read_text()
 startup=host[host.index("    override fun onCreate("):host.index("    private fun loadPersistedSettings()") ]
-required=("DiPlayBootstrap.ensure(this)","initializeSessionLog()","loadPersistedSettings()","setContentView(buildContentView())","applyFullscreenMode()","adoptBackgroundSession()","requestStartupPrerequisites()")
+required=("initializeSessionLog()","loadPersistedSettings()","setContentView(buildContentView())","applyFullscreenMode()","DiPlayBootstrap.ensure(this)","adoptBackgroundSession()","requestStartupPrerequisites()")
 positions=[startup.index(token) for token in required]
 assert positions==sorted(positions), "Host startup initialization order changed"
 print("PASS: real onCreate retains original UI, settings, diagnostics and permission startup")

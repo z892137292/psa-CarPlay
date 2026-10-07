@@ -4,10 +4,16 @@ PASS: MFi -> PHONE_BOUND -> network ordering, ownership and handoff guards, cont
 Actual source changes:
 common/src/main/AndroidManifest.xml
 common/src/main/java/com/shilapi/xcertplay/AirPlayPersistence.kt
+common/src/main/java/com/shilapi/xcertplay/BluetoothPhoneRepository.kt
 common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
+common/src/main/java/com/shilapi/xcertplay/CarPlayShell.kt
+common/src/main/java/com/shilapi/xcertplay/CarPlayUiState.kt
 common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
 common/src/main/java/com/shilapi/xcertplay/DiPlayBootstrap.kt
+common/src/test/java/com/shilapi/xcertplay/CarPlayHostPreparationTest.kt
 common/src/test/java/com/shilapi/xcertplay/CarPlayHostStartupTest.kt
+common/src/test/java/com/shilapi/xcertplay/CarPlayShellStartupTest.kt
+common/src/test/java/com/shilapi/xcertplay/CarPlayUiStateTest.kt
 common/src/test/java/com/shilapi/xcertplay/HotspotModeMigrationTest.kt
 common/src/test/java/com/shilapi/xcertplay/LanNetworkManagerTest.kt
 common/src/test/java/com/shilapi/xcertplay/SoftApLifecycleTest.kt
@@ -25,6 +31,7 @@ shared/src/main/java/com/shilapi/xcertplay/network/CarPlayVpnService.kt
 shared/src/main/java/com/shilapi/xcertplay/network/LanNetworkManager.kt
 shared/src/main/java/com/shilapi/xcertplay/network/LegacyHotspotRadio.kt
 shared/src/main/java/com/shilapi/xcertplay/network/LocalOnlyHotspotRadioInfo.kt
+shared/src/main/java/com/shilapi/xcertplay/network/ManualHotspotManager.kt
 shared/src/main/java/com/shilapi/xcertplay/network/RootSoftApBackend.kt
 shared/src/main/java/com/shilapi/xcertplay/network/RootSoftApMain.kt
 shared/src/main/java/com/shilapi/xcertplay/network/SessionSoftApManager.kt
