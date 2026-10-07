@@ -5,8 +5,9 @@ from pathlib import Path
 OUT=Path('out/emulator-ui');OUT.mkdir(parents=True,exist_ok=True)
 PKG='com.psa.carplay.dev'
 def adb(*args):return subprocess.check_output(['adb',*args],text=True).strip()
-def launch(page='home',host=False):
+def launch(page='home',host=False,cold=False):
  args=['shell','am','start','-W','-n',PKG+'/com.shilapi.xcertplay.'+('CarPlayHostActivity' if host else 'DiPlayActivity')]
+ if cold:args+=['-f','0x10008000'] # NEW_TASK | CLEAR_TASK: cold start, not Android task restoration.
  if page is not None:args+=['--es','page',page]
  adb(*args)
  time.sleep(.7)
@@ -52,17 +53,17 @@ adb('shell','wm','size','2250x1080');adb('shell','wm','density','160')
 assert 'Override size: 2250x1080' in adb('shell','wm','size'),'Emulator clamped requested head-unit dimensions'
 # Android's first-use immersive tutorial obscures the app hierarchy; configure the test device.
 adb('shell','settings','put','secure','immersive_mode_confirmations','confirmed')
-adb('shell','am','force-stop',PKG);launch(None)
+adb('shell','am','force-stop',PKG);launch(None,cold=True)
 texts=check('auto-cold-launch','PSA CarPlay')
 assert any(t in texts for t in ['连接手机','取消连接']),'Automatic cold launch has no usable connection controls'
-adb('shell','am','force-stop',PKG);launch('settings');check('settings','PSA CarPlay','首选连接方式')
+adb('shell','am','force-stop',PKG);launch('settings',cold=True);check('settings','PSA CarPlay','首选连接方式')
 scroll_to('保持屏幕唤醒')
 check('settings-scrolled','PSA CarPlay','保持屏幕唤醒')
 # Stop automatic connection so the no-phone cold-start and each explicit retry are separate.
 # This edits the same user preference as the UI toggle, using debuggable run-as.
 xml='<map><boolean name="auto_connect" value="false" /></map>'
 subprocess.run(['adb','shell','run-as',PKG,'sh','-c',"'mkdir -p shared_prefs; cat > shared_prefs/diplay.xml'"],input=xml,text=True,check=True)
-adb('shell','am','force-stop',PKG);launch();check('cold-home','PSA CarPlay','连接手机')
+adb('shell','am','force-stop',PKG);launch(cold=True);check('cold-home','PSA CarPlay','连接手机')
 tap('手机');check('phones','未发现已配对')
 tap('连接');check('connection','车机热点')
 tap('CarPlay');tap('连接手机');check('connecting-no-phone','PSA CarPlay','取消连接')
@@ -76,7 +77,7 @@ adb('shell','wm','size','2250x1080');time.sleep(1);check('landscape-restored','P
 adb('shell','input','keyevent','3');launch(host=True);check('foreground-no-frame','取消连接')
 # Grant only the emulator's real VPN prerequisite; no USB device/session is injected.
 adb('shell','appops','set',PKG,'ACTIVATE_VPN','allow')
-adb('shell','am','force-stop',PKG);launch('connection');tap('USB CarPlay');tap('CarPlay');tap('连接手机');check('usb-absent','PSA CarPlay','取消连接')
+adb('shell','am','force-stop',PKG);launch('connection',cold=True);tap('USB CarPlay');tap('CarPlay');tap('连接手机');check('usb-absent','PSA CarPlay','取消连接')
 log=adb('logcat','-d','-v','threadtime');(OUT/'logcat.txt').write_text(log)
 assert not re.search(r'FATAL EXCEPTION[^\n]*\n(?:[^\n]*\n){0,3}[^\n]*Process: '+re.escape(PKG),log)
 (OUT/'RESULT.json').write_text(json.dumps({'installed_apk':apk.name,'cold_launch':True,'no_phone_ui':True,'paired_list_empty_state':True,'connect_cancel_cycles':10,'usb_absent':True,'orientation':True,'first_frame_hardware_test':'NOT_PERFORMED: no iPhone'},indent=2))
