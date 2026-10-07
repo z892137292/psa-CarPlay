@@ -1,5 +1,5 @@
 diff --git a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt b/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
-index f91a557..1769492 100644
+index f91a557..dcbd332 100644
 --- a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
 +++ b/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
 @@ -336,6 +336,7 @@ class CarPlayHostActivity : ComponentActivity() {
@@ -46,7 +46,7 @@ index f91a557..1769492 100644
      private fun returnHomeAfterConfirmedLoss(reason: String, eventNanos: Long) {
          activeAirPlaySession = null
          activeScreenStreamTypes.clear()
-+                    mainFirstFrameReady = false
++        mainFirstFrameReady = false
          CarPlayBackgroundSession.active = false
          PsaConnectionState.set("连接", "等待重连")
          appendFileLog("CONNECTION_STATE state=DISCONNECTED reason=$reason eventNanos=$eventNanos")
@@ -54,7 +54,7 @@ index f91a557..1769492 100644
          val size = activeDisplaySize ?: return
          appendLog(reason)
          activeScreenStreamTypes.clear()
-+                    mainFirstFrameReady = false
++        mainFirstFrameReady = false
          setConnectionStage(reason)
          Log.i(TAG, "$reason; rebuilding stack at ${size.width}x${size.height}")
          val generation = ++restartGeneration
@@ -239,7 +239,7 @@ index 67587bc..a541c7d 100644
 +    <string name="settings_android9_compat">Следующие настройки недоступны и скрыты на Android 9 (API 28):\n• Программный декодер HEVC — вместо него используется аппаратное декодирование.</string>
  </resources>
 diff --git a/common/src/main/res/values-uk/strings.xml b/common/src/main/res/values-uk/strings.xml
-index 09339ff..2d49dec 100644
+index 09339ff..e669ffb 100644
 --- a/common/src/main/res/values-uk/strings.xml
 +++ b/common/src/main/res/values-uk/strings.xml
 @@ -73,7 +73,6 @@
@@ -250,7 +250,15 @@ index 09339ff..2d49dec 100644
      <string name="settings_mfi_address_hint">Адреса має починатися з http:// або https://. Токен необов’язковий і надсилається як токен авторизації Bearer.</string>
      <string name="app_name">PSA CarPlay</string>
      <string name="language_section_title">Мова</string>
-@@ -377,7 +376,6 @@
+@@ -229,7 +228,6 @@
+     <string name="linux_device_path_for_example_dev_i2c_1">Шлях до пристрою Linux, наприклад /dev/i2c-1.</string>
+     <string name="loading_image">Завантаження зображення</string>
+     <string name="local_offline">Локально, без мережі</string>
+-    <string name="localonlyhotspot">LocalOnlyHotspot</string>
+     <string name="location">Місцезнаходження</string>
+     <string name="longest_height">Найбільша висота</string>
+     <string name="looking_for_your_paired_iphone">Пошук спареного iPhone…</string>
+@@ -377,7 +375,6 @@
      <string name="waiting_for_mfi_coprocessor">Очікування співпроцесора MFi</string>
      <string name="waiting_for_paired_iphone">Очікування спареного iPhone</string>
      <string name="wi_fi_direct_is_still_busy_close_the_other_projection_app">Wi-Fi Direct усе ще зайнятий. Закрийте інший застосунок проєкції та спробуйте знову.</string>
@@ -258,14 +266,14 @@ index 09339ff..2d49dec 100644
      <string name="wi_fi_session">Сеанс Wi-Fi</string>
      <string name="widest_width">Найбільша ширина</string>
      <string name="window">Вікно</string>
-@@ -479,4 +477,5 @@
+@@ -479,4 +476,5 @@
      <string name="widget_minutes">%1$d хв</string>
      <string name="widget_no_route">Немає маршруту</string>
      <string name="widget_not_connected">CarPlay не підключено</string>
 +    <string name="settings_android9_compat">Наведені нижче налаштування недоступні та приховані в Android 9 (API 28):\n• Програмний декодер HEVC — натомість використовується апаратне декодування.</string>
  </resources>
 diff --git a/common/src/main/res/values-zh-rCN/strings.xml b/common/src/main/res/values-zh-rCN/strings.xml
-index 173b05a..e2f1219 100644
+index 173b05a..e75ae66 100644
 --- a/common/src/main/res/values-zh-rCN/strings.xml
 +++ b/common/src/main/res/values-zh-rCN/strings.xml
 @@ -71,7 +71,6 @@
@@ -276,7 +284,15 @@ index 173b05a..e2f1219 100644
      <string name="settings_mfi_address_hint">地址必须以 http:// 或 https:// 开头。令牌为可选项，将作为 Authorization bearer token 发送。</string>
      <string name="a_familiar_drive">熟悉的驾乘体验。</string>
      <string name="a_previous_wi_fi_direct_connection_is_still_running_reset">之前的 Wi-Fi Direct 连接仍在运行。请重置后再连接。</string>
-@@ -375,7 +374,6 @@
+@@ -227,7 +226,6 @@
+     <string name="linux_device_path_for_example_dev_i2c_1">Linux 设备路径，例如 /dev/i2c-1。</string>
+     <string name="loading_image">正在加载图片</string>
+     <string name="local_offline">本地离线</string>
+-    <string name="localonlyhotspot">LocalOnlyHotspot</string>
+     <string name="location">位置</string>
+     <string name="longest_height">较长边</string>
+     <string name="looking_for_your_paired_iphone">正在查找已配对的 iPhone…</string>
+@@ -375,7 +373,6 @@
      <string name="waiting_for_mfi_coprocessor">正在等待 MFi 协处理器</string>
      <string name="waiting_for_paired_iphone">正在等待已配对的 iPhone</string>
      <string name="wi_fi_direct_is_still_busy_close_the_other_projection_app">Wi-Fi Direct 仍被占用。请关闭其他投屏应用后重试。</string>
@@ -284,14 +300,14 @@ index 173b05a..e2f1219 100644
      <string name="wi_fi_session">Wi-Fi 会话</string>
      <string name="widest_width">较宽边</string>
      <string name="window">窗口</string>
-@@ -478,4 +476,5 @@
+@@ -478,4 +475,5 @@
      <string name="center_map_no_permission_screen">此车机没有该权限的设置界面，请通过 ADB 允许。</string>
      <string name="launcher_map_sharing">与其他启动器共享实时地图</string>
      <string name="launcher_map_sharing_description">支持 DiPlay 的启动器可以在自己的主屏幕中显示实时仪表盘地图。默认关闭，因为开启后车机上的任何应用都可以请求该地图。详见 docs/LAUNCHER_INTEGRATION.md。</string>
-+    <string name="settings_android9_compat">Android 9：Wi-Fi Direct 为实验模式，频段由系统选择；未知信道以0进行测试，iPhone是否接受尚未验证。HEVC软解码不可用，使用硬件解码。</string>
++    <string name="settings_android9_compat">Android 9：HEVC软解码不可用，使用硬件解码。</string>
  </resources>
 diff --git a/common/src/main/res/values/strings.xml b/common/src/main/res/values/strings.xml
-index 667cd4d..fd53268 100644
+index 667cd4d..af12f2a 100644
 --- a/common/src/main/res/values/strings.xml
 +++ b/common/src/main/res/values/strings.xml
 @@ -72,7 +72,6 @@
@@ -302,7 +318,15 @@ index 667cd4d..fd53268 100644
      <string name="settings_mfi_address_hint">Address must start with http:// or https://. Token is optional and sent as an Authorization bearer token.</string>
      <string name="app_name">PSA CarPlay</string>
      <string name="language_section_title">Language</string>
-@@ -376,7 +375,6 @@
+@@ -228,7 +227,6 @@
+     <string name="linux_device_path_for_example_dev_i2c_1">Linux device path, for example /dev/i2c-1.</string>
+     <string name="loading_image">Loading image</string>
+     <string name="local_offline">Local offline</string>
+-    <string name="localonlyhotspot">LocalOnlyHotspot</string>
+     <string name="location">Location</string>
+     <string name="longest_height">Longest height</string>
+     <string name="looking_for_your_paired_iphone">Looking for your paired iPhone…</string>
+@@ -376,7 +374,6 @@
      <string name="waiting_for_mfi_coprocessor">Waiting for MFi coprocessor</string>
      <string name="waiting_for_paired_iphone">Waiting for paired iPhone</string>
      <string name="wi_fi_direct_is_still_busy_close_the_other_projection_app">Wi-Fi Direct is still busy. Close the other projection app and try again.</string>
@@ -310,17 +334,17 @@ index 667cd4d..fd53268 100644
      <string name="wi_fi_session">Wi-Fi session</string>
      <string name="widest_width">Widest width</string>
      <string name="window">Window</string>
-@@ -478,4 +476,5 @@
+@@ -478,4 +475,5 @@
      <string name="center_map_no_permission_screen">This head unit has no settings screen for this permission. Allow it over ADB.</string>
      <string name="launcher_map_sharing">Share the live map with other launchers</string>
      <string name="launcher_map_sharing_description">Launchers that support DiPlay can show the live dashboard map inside their own home screen. Off by default, because any app on the head unit could then ask for the map. See docs/LAUNCHER_INTEGRATION.md.</string>
-+    <string name="settings_android9_compat">Android 9: Wi-Fi Direct is experimental and uses a system-selected band. Unknown channel is sent as 0 for testing; iPhone acceptance is unverified. HEVC software decoding is unavailable; hardware decoding is used.</string>
++    <string name="settings_android9_compat">Android 9: HEVC software decoding is unavailable; hardware decoding is used.</string>
  </resources>
 diff --git a/common/src/test/java/com/shilapi/xcertplay/CarPlayHostPreparationTest.kt b/common/src/test/java/com/shilapi/xcertplay/CarPlayHostPreparationTest.kt
-index eb3a200..1ae25b6 100644
+index eb3a200..cbc8dc6 100644
 --- a/common/src/test/java/com/shilapi/xcertplay/CarPlayHostPreparationTest.kt
 +++ b/common/src/test/java/com/shilapi/xcertplay/CarPlayHostPreparationTest.kt
-@@ -47,13 +47,26 @@ class CarPlayHostPreparationTest {
+@@ -47,13 +47,27 @@ class CarPlayHostPreparationTest {
          assertEquals(View.VISIBLE, (field("connectionPanel") as View).visibility)
      }
  
@@ -336,6 +360,7 @@ index eb3a200..1ae25b6 100644
  
 +    @Test fun altFrameAndStaleMainFrameCannotHideWaitingPanel() {
 +        stream(0, true)
++        frame(0, 111)
 +        frame(0, 130)
 +        frame(-1, 110)
 +        assertEquals(View.VISIBLE, (field("connectionPanel") as View).visibility)

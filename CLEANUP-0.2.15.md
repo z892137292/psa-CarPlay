@@ -43,7 +43,7 @@
 | 正式入口 | 依赖与保留行为 |
 | --- | --- |
 | USB | USBMUX → iAP2 → NCM → VPN / IPv6 bridge → AirPlay；MFi、USB 授权和诊断完整保留 |
-| 车机热点 | Bluetooth bootstrap / MFi / PHONE_BOUND → ManualHotspotManager 只读系统现有 AP → Bonjour / AirPlay |
+| 车机热点 | Bluetooth bootstrap / MFi / 已选配对手机绑定（基线未使用 PHONE_BOUND 字面状态名，绑定和认证行为保留） → ManualHotspotManager 只读系统现有 AP → Bonjour / AirPlay |
 | Existing LAN | 同一蓝牙鉴权 → ExistingWifiManager → 实际 station 接口及 SSID/BSSID 校验 → Bonjour / AirPlay |
 | 画面与声音 | type-130、H.264、AAC、触摸及既有编码参数；不修改旋转策略 |
 | 生命周期 | 旧 Controller 清理 gate；断线回首页；主视频 FIRST_FRAME 才隐藏准备面板 |
@@ -53,7 +53,7 @@
 
 ## 验证状态
 
-本地：XML/失效引用/禁止网络创建 API/必需模块检查通过；git diff --check 通过。Gradle 发行包下载被当前环境网络限制，改用 GitHub Actions 执行真实编译及完整单元测试/lint。不能把静态检查替代构建。
+本地：40 个 MFi/USB/Bluetooth transport 文件与最新 PSA 0.2.12 基线字节一致（IPv6NcmBridge 单独保留已审查的 TUN 修复）；XML/失效引用/禁止网络创建 API/必需模块检查通过；git diff --check 通过。Gradle 发行包下载被当前环境网络限制，改用 GitHub Actions 执行真实编译及完整单元测试/lint。不能把静态检查替代构建。
 
 Actions 执行 AGENTS.md 要求的 shared/common/home 全量单元测试，mobile/home/maphost lint 与三个 assembleDebug，再生成有运行认证输入的 assembleStandaloneDebug；失败也上传 XML 和 lint 证据。结果以对应 commit 的实际 run 为准，尚未完成时不写“通过”。新增回归：主首帧/仪表帧/旧回调防黑屏、1920×720 操作入口完整可见、USB TUN 提前关闭。保留热点身份、旧控制器 gate、LAN 身份、iAP2/MFi/AirPlay/USB 测试。
 
