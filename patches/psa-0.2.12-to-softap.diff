@@ -687,7 +687,7 @@ index 0000000..d58a54d
 +internal data class SettingsUiState(val autoConnect: Boolean,val mode: String)
 +internal data class DeviceUiState(val name: String,val address: String,val iphone: Boolean,val connected: Boolean?,val bound: Boolean=false)
 diff --git a/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt b/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
-index ddd49a7..8827c27 100644
+index ddd49a7..26d2090 100644
 --- a/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
 +++ b/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
 @@ -49,6 +49,7 @@ import kotlin.math.roundToInt
@@ -907,7 +907,7 @@ index ddd49a7..8827c27 100644
 +        disconnectButton=CarPlayShell.button(this,"断开 CarPlay") { CarPlayBackgroundSession.stop { runOnUiThread { refreshStatus() } } }.apply { visibility=View.GONE }
 +        card.addView(disconnectButton,matchButton(12,60))
 +        val network=CarPlayShell.card(this)
-+        network.addView(CarPlayShell.label(this,"车机热点 / 现有网络",23f))
++        network.addView(CarPlayShell.label(this,if(!AirPlayPersistence.loadWirelessEnabled(this)) "USB CarPlay" else if(AirPlayPersistence.loadWirelessHotspotMode(this)==WirelessHotspotMode.EXISTING_LAN) "现有局域网" else "车机热点",23f))
 +        networkStatusView=CarPlayShell.label(this,"正在检测网络状态…",18f);network.addView(networkStatusView)
 +        refreshNetworkCard()
 +        network.addView(CarPlayShell.button(this,if(AirPlayPersistence.loadWirelessHotspotMode(this)==WirelessHotspotMode.EXISTING_LAN) "Wi-Fi 设置" else "车机热点设置") { if(AirPlayPersistence.loadWirelessHotspotMode(this)==WirelessHotspotMode.EXISTING_LAN) NetworkSettingsLauncher.wifi(this) else NetworkSettingsLauncher.hotspot(this) },matchButton(12,60))
