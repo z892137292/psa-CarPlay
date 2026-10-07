@@ -5,6 +5,9 @@ import sys
 
 baseline,candidate=map(Path,sys.argv[1:3])
 allowed={
+ "common/src/main/java/com/shilapi/xcertplay/DiagnosticRedactor.kt",
+ "common/src/test/java/com/shilapi/xcertplay/DiagnosticRedactorTest.kt",
+ "common/src/test/java/com/shilapi/xcertplay/LanNetworkManagerTest.kt",
  "common/src/main/java/com/shilapi/xcertplay/NetworkSettingsLauncher.kt",
  "common/src/test/java/com/shilapi/xcertplay/NetworkIdentityResolverTest.kt",
  "shared/src/main/java/com/shilapi/xcertplay/network/NetworkIdentityResolver.kt",

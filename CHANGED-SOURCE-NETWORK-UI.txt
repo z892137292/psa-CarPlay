@@ -1,7 +1,10 @@
 common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
 common/src/main/java/com/shilapi/xcertplay/CarPlayShell.kt
 common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
+common/src/main/java/com/shilapi/xcertplay/DiagnosticRedactor.kt
 common/src/main/java/com/shilapi/xcertplay/NetworkSettingsLauncher.kt
+common/src/test/java/com/shilapi/xcertplay/DiagnosticRedactorTest.kt
+common/src/test/java/com/shilapi/xcertplay/LanNetworkManagerTest.kt
 common/src/test/java/com/shilapi/xcertplay/NetworkIdentityResolverTest.kt
 mobile/build.gradle.kts
 shared/src/main/java/com/shilapi/xcertplay/network/ExistingSystemAp.kt
