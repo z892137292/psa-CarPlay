@@ -17,6 +17,7 @@
 | 平台 | spm8666p1_64 | 只写诊断，不作为代码分支常量 |
 | Android | Android 9 / API 28 | 最低 SDK 28；实机再次读取 SDK_INT、release/build fingerprint |
 | 屏幕 | 1920×720 | 多 DPI 页面回归；实机另测字体缩放、系统栏 |
+| 显示密度 | 目标 160dpi，未通过 adb 复核 | 不硬编码运行密度；实测 wm density/font_scale |
 | Root | su 可用 | 正式 LAN/热点复用不要求 root |
 | 外接 AP | 无互联网可用，已有 CarPlay 首帧 | 不要求 INTERNET/VALIDATED 或公网 |
 | STA / 热点 | wlan0 / ap0 | 按动态 link/address/STA 证据选择，不写死接口名 |
@@ -26,4 +27,4 @@
 
 ## 下一轮待实机核实
 
-记录 `getprop ro.build.version.sdk/release`、board/hardware/fingerprint、`wm size/density`、font_scale；检查权限实际授予、WifiInfo 是否脱敏、STA 与热点并存的 LinkProperties。外接无互联网 AP 验证持续视频/声音、10 次连接/断开/重连、首帧前等待、断开回 PSA 首页、无重启及致命崩溃。USB 后续单独验证设备枚举、VID/PID、hasPermission 与授权广播；本次完全保持 USB 源码。
+记录 `getprop ro.build.version.sdk/release`、board/hardware/fingerprint、`wm size/density`、font_scale；检查权限实际授予、WifiInfo 是否脱敏、STA 与热点并存的 LinkProperties。外接无互联网 AP 验证持续视频/声音、10 次连接/断开/重连、首帧前等待、断开回 PSA 首页、无重启及致命崩溃。USB 核心协议保留；PR #13 仅保留 Apple 插入过滤器与重复入口保护。用户补充确认 USB/LAN 均曾出画面；当前候选仍须重测设备枚举、VID/PID、hasPermission、授权广播与真实画面。

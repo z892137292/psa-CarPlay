@@ -14,6 +14,8 @@
 | 首帧 | PSA native TextureView 当前 SurfaceTexture 的更新触发 FIRST_FRAME；SETUP/流激活单独不会隐藏等待面板；旧 generation 和旧 Texture 均被拒绝 | 真正 H.264 输出可见、旋转/暂停恢复 |
 | 断开返回 | PSA 明确启动 DiPlayActivity + CLEAR_TOP + page=home，finish Host，不发送 HOME category；新增 API28 模拟测试 | 断开后停留 PSA 首页，用户主动“车机桌面”按钮才打开 HOME |
 | 设置 | PSA Wi-Fi 使用 WIFI_SETTINGS 路径；删除旧 BYD 专属 HOME 跳转，热点 TETHER_SETTINGS ；ROM 不提供入口时给出提示，蓝牙使用系统/已配对设备列表。Launcher DEX 有普通 SETTINGS action | 车机 OEM Settings 是否 resolve、返回 PSA 是否恢复正确页面 |
-| 字体/DPI/触摸 | Launcher 声明横屏不证明 1920×720 正确；PSA 原生首页按有效 dp 高度缩放，已有 mdpi/hdpi/xhdpi 物理 1920×720 测试 | wm density、font_scale、实际最小触控区域；截图测量不能由静态 APK 代替 |
+| 字体/DPI/触摸 | Launcher 声明横屏不证明 1920×720 正确；PR #13 首页取消二次全局缩放；mdpi 测完整显示，hdpi/xhdpi 测正常 dp 控件通过滚动到达，物理窗口均为 1920×720 | wm density、font_scale、实际最小触控区域；截图测量不能由静态 APK 代替 |
 
 Launcher 声明 WRITE_SECURE_SETTINGS、FORCE_STOP_PACKAGES、INTERACT_ACROSS_USERS 等权限，也有厂商服务调用路径；声明不证明被授予。PSA 不要求这些权限，不以安装特权组件或修改 Launcher 为前提。静态分析未执行 Launcher，不代表其系统栏、桌面杀后台策略或 Settings 页面在车机上验证成功。
+
+PR #13 窗口覆盖与焦点：只修改 DiPlayActivity 首页；Host 原不透明准备面板原样保留。当前 Texture 更新且主流 active 才显示视频；旧 Surface 尺寸回调忽略。onPause 取消显示等待超时但保留 Controller，onResume 重新等待。Launcher 遮盖窗口、强制抢焦点、OEM 杀后台行为仍须在车机检查，不能通过桌面 DEX 作无风险结论。详见 PSA_FIRST_FRAME_RELEASE_GATE.md。

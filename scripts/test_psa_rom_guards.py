@@ -26,4 +26,15 @@ class PsaSourceRegressionTest(unittest.TestCase):
         path.write_text('fun invalid() { wifi.startLocalOnlyHotspot() }')
         result=self.guard('verify_formal_tree.py')
         self.assertNotEqual(0, result.returncode); self.assertIn('Forbidden experiment', result.stderr)
+    def test_controller_start_cannot_replace_first_frame_gate(self):
+        path=self.root/'common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt'
+        source=path.read_text(); original='mainFirstFrameReady && SCREEN_TYPE_MAIN in activeScreenStreamTypes'
+        self.assertIn(original,source)
+        path.write_text(source.replace(original,'controller != null'))
+        self.assertNotEqual(0,self.guard('verify_safe_usb_ui_tune.py').returncode)
+    def test_preparation_panel_cannot_become_a_black_waiting_window(self):
+        path=self.root/'common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt'
+        path.write_text(path.read_text().replace('setBackgroundColor(Color.rgb(12, 17, 27))','setBackgroundColor(Color.BLACK)'))
+        result=self.guard('verify_safe_usb_ui_tune.py')
+        self.assertNotEqual(0,result.returncode); self.assertIn('Original preparation UI',result.stderr)
 unittest.main()

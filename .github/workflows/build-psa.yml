@@ -20,7 +20,11 @@ jobs:
         run: |
           mkdir -p out
           git fetch --unshallow origin
-          git tag rollback/psa-pr13-before-first-frame-review-20261008 91e4b3922bc14b2c6d8863cc220d71934650447b
+          if git rev-parse --verify refs/tags/rollback/psa-pr13-before-first-frame-review-20261008 >/dev/null 2>&1; then
+            test "$(git rev-parse refs/tags/rollback/psa-pr13-before-first-frame-review-20261008)" = 91e4b3922bc14b2c6d8863cc220d71934650447b
+          else
+            git tag rollback/psa-pr13-before-first-frame-review-20261008 91e4b3922bc14b2c6d8863cc220d71934650447b
+          fi
           git bundle create out/PSA-PR13-before-first-frame.bundle refs/tags/rollback/psa-pr13-before-first-frame-review-20261008
           if ! git ls-remote --exit-code --tags origin refs/tags/rollback/psa-pr13-before-first-frame-review-20261008; then
             if ! gh api repos/${{ github.repository }}/git/refs -f ref=refs/tags/rollback/psa-pr13-before-first-frame-review-20261008 -f sha=91e4b3922bc14b2c6d8863cc220d71934650447b; then

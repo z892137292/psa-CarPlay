@@ -1,5 +1,7 @@
 # PSA ROM 专项回归与交付记录
 
+本文末尾结果是历史 PR #12 的验证；当前 PR #13 的改动和结果见 PSA_FIRST_FRAME_RELEASE_GATE.md。
+
 版本状态：0.2.15-ROM 测试候选。基于正式候选 + PR #11，未覆盖 main；最终实机验收尚未执行。
 
 ## 最小代码变更
@@ -25,7 +27,7 @@ AudioTrack.Builder/API23、bufferSizeInFrames/API23、routedDevice/API23、under
 | AudioTrack/fallback | LegacyAudioFallbackTest + PsaRomAudioGuardTest：构造失败/未初始化/释放缺失方法/fallback；静态属性来源守卫 |
 | 解码器失败 | 实际 worker AAC 创建失败模拟；generic initialization 部分 configure 失败释放回归 |
 | H.264 Surface/首帧 | CarPlayHostPreparationTest 在 API28/29：PsaSurfaceLifecycleTest 的真实 Android Surface 创建/替换/销毁（无硬件 H.264 解码执行），当前/旧 Texture 更新、销毁、无首帧等待、ALT/stale generation、快速断开重入；未验证硬件解码器 |
-| 1920×720 | PsaWideHomeTest：mdpi/240dpi/320dpi，必需按钮全部可见；实机字体缩放/触控仍待验证 |
+| 1920×720 | PsaWideHomeTest：历史 PR #12 的密度适配；当前 PR #13 改为 mdpi 完整显示、240dpi/320dpi 滚动可达；实机字体缩放/触控仍待验证 |
 | Activity 返回/恢复 | PsaLauncherReturnTest 确认 terminal loss 明确回 PSA home、Wi-Fi 不插入 HOME；既有 CarPlayHostDisplaySizeTest 覆盖保留控制器重复进入；真实 Launcher 暂停恢复待实机 |
 | 快速断开/资源互斥 | 快速 stream 反复激活/终止；既有 ControllerCloseGateTest、LanBonjourLifecycleTest 检查异步 close 与单控制器 |
 | 无互联网 LAN | 既有 API28 LanNetworkManagerTest 切换 INTERNET/VALIDATED 不影响可用性、不改路由 |

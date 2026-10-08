@@ -19,13 +19,13 @@ PR #11 音频修复和 PR #12 ROM 测试进入本 PR 的源码重建流程。Aud
 没有恢复 P2P、自动 SoftAP 或改变已经工作的协议栈。无互联网 LAN 和 wlan0/ap0 选择测试来自 ROM 兼容套件。
 
 ## 自动化与限制
-静态：正式树检查、保护协议源码字节检查、ROM 危险 API 检查、3 个检查器变异测试、UI/首帧检查。
-JVM/Robolectric：原完整 shared/common/home 套件，加无首帧 90 秒恢复、握手不能隐藏准备面板、旧计时无效、首帧取消计时、暂停抑制计时、重复 USB 复用、旧 Surface 回调、首页错误持久显示。模拟不能替代实机。
+静态：正式树检查、保护协议源码字节检查、ROM 危险 API 检查、5 个检查器变异测试、UI/首帧检查。
+JVM/Robolectric：原完整 shared/common/home 套件，加无首帧 90 秒恢复、握手不能隐藏准备面板、旧计时无效、首帧取消计时、真实 onPause/onResume 保留控制器并重新计时、USB/LAN 点击路由、重复 USB 复用、旧 Surface 回调、首页错误持久显示。模拟不能替代实机。
 本地 Gradle 因下载网络不可达未运行；GitHub Actions 执行完整 Gradle 单测、lint、APK/Standalone/示例构建。具体结果在构建完成后补充。
 
 ## 必须待实机验证
 打开首页；点击连接保留准备面板；USB/LAN 原路径出画面；首帧前无黑屏；无视频超时能重试；连接中返回；断线回主页；连续连接/断开/重进；PSA Launcher 前后台/HOME 切换；1920×720 实际密度/字体/触控；音视频连续播放；无崩溃或整机重启。未完成前仅标记测试候选。
 
 ## 回滚
-不修改 cleanup/psa-formal 或 main。CI 建立 rollback/psa-pr13-before-first-frame-review-20261008 指向本次修改前 91e4b3922bc14b2c6d8863cc220d71934650447b（源码回滚点，不声称其 CI 或实机成功）。
+不修改 cleanup/psa-formal 或 main。CI 保存在 Git bundle 内的本地标签 rollback/psa-pr13-before-first-frame-review-20261008 指向本次修改前 91e4b3922bc14b2c6d8863cc220d71934650447b（源码回滚点，不声称其 CI 或实机成功）。GitHub workflow token 缺少 workflows 权限，远端标签创建被拒绝；完整带标签备份在 Artifact，不冒充远端已创建。
 车机安装前先备份当前已成功 APK（adb shell pm path com.psa.carplay.dev，再 adb pull 返回的 base.apk）；记录 SHA256/签名与版本。若测试破坏 USB/LAN、准备界面、恢复或导致重启，立即停止并恢复该实机已成功 APK。不要将任何 CI APK 冒充原实机成功版本。

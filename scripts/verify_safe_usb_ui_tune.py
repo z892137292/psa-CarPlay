@@ -28,3 +28,7 @@ assert "FIRST_FRAME_WAIT_MILLIS = 90_000L" in host
 assert "firstFrameWaitSuspended" in host and "psa_first_frame_timeout" in src
 assert "currentSurfaceTexture !== texture" in host
 print("PASS: first-frame gate, recoverable deadline and stale Surface protection retained")
+
+import hashlib
+preparation = host[host.index("    private fun buildContentView(): View {"):host.index("    private fun buildSettingsMenu(): View {")]
+assert hashlib.sha256(preparation.encode()).hexdigest() == "6a2eaf8257e165f5c3fbd56374ba893b4db1871b60ffa5b136f66f12d8cc06f0", "Original preparation UI must remain intact"
