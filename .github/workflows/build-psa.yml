@@ -1,7 +1,7 @@
-name: PSA 0.2.15 formal cleanup and full regression
+name: PSA target ROM compatibility candidate
 on:
   push:
-    branches: [cleanup/psa-formal]
+    branches: [fix/psa-usb-ui-safe-20261008]
   workflow_dispatch:
 permissions:
   contents: write
@@ -14,12 +14,22 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - name: Preserve rollback tag
+      - name: Preserve source rollback tag and backup
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          git fetch origin c638f50a49d3f0386b95726ebcca37fdb1bda20b
-          if ! git ls-remote --exit-code --tags origin refs/tags/rollback/psa-before-formal-20261008; then
-            git tag rollback/psa-before-formal-20261008 c638f50a49d3f0386b95726ebcca37fdb1bda20b
-            git push origin refs/tags/rollback/psa-before-formal-20261008
+          mkdir -p out
+          git fetch --unshallow origin
+          if git rev-parse --verify refs/tags/rollback/psa-pr13-before-first-frame-review-20261008 >/dev/null 2>&1; then
+            test "$(git rev-parse refs/tags/rollback/psa-pr13-before-first-frame-review-20261008)" = 91e4b3922bc14b2c6d8863cc220d71934650447b
+          else
+            git tag rollback/psa-pr13-before-first-frame-review-20261008 91e4b3922bc14b2c6d8863cc220d71934650447b
+          fi
+          git bundle create out/PSA-PR13-before-first-frame.bundle refs/tags/rollback/psa-pr13-before-first-frame-review-20261008
+          if ! git ls-remote --exit-code --tags origin refs/tags/rollback/psa-pr13-before-first-frame-review-20261008; then
+            if ! gh api repos/${{ github.repository }}/git/refs -f ref=refs/tags/rollback/psa-pr13-before-first-frame-review-20261008 -f sha=91e4b3922bc14b2c6d8863cc220d71934650447b; then
+              echo 'Remote tag unavailable: workflow token permission; local tag and complete git bundle preserved.' > out/ROLLBACK-TAG-STATUS.txt
+            fi
           fi
       - uses: actions/setup-java@v4
         with:
@@ -36,7 +46,26 @@ jobs:
           base64 -d patches/psa-formal-0.2.15.patch.gz.b64 | gzip -d > "$RUNNER_TEMP/formal.patch"
           git -C upstream apply --check "$RUNNER_TEMP/formal.patch"
           git -C upstream apply "$RUNNER_TEMP/formal.patch"
+          git -C upstream apply --check "$GITHUB_WORKSPACE/patches/psa-audio-rom-api28.patch"
+          git -C upstream apply "$GITHUB_WORKSPACE/patches/psa-audio-rom-api28.patch"
+          python3 - <<'PY'
+          from pathlib import Path
+          file = Path('upstream/shared/src/main/java/com/shilapi/xcertplay/media/AndroidMediaSink.kt')
+          src = file.read_text()
+          assert 'trackAttributes = built.audioAttributes' not in src, 'Unsupported AudioTrack getter is still used'
+          assert 'catch (error: LinkageError)' in src, 'ROM linkage errors must not kill CarPlay'
+          assert 'trackAttributes = fallbackAttributes' in src, 'Audio fallback must retain the actual route attributes'
+          print('PASS: Android 9 ROM AudioTrack attribute getter removed and safe fallback retained')
+          PY
+          git -C upstream apply --check "$GITHUB_WORKSPACE/patches/psa-rom-compat.patch"
+          git -C upstream apply "$GITHUB_WORKSPACE/patches/psa-rom-compat.patch"
+          python3 scripts/apply_safe_usb_ui_tune.py upstream
+          git -C upstream apply --check "$GITHUB_WORKSPACE/patches/psa-first-frame-release-gate.patch"
+          git -C upstream apply "$GITHUB_WORKSPACE/patches/psa-first-frame-release-gate.patch"
           mkdir -p out
+          python3 scripts/verify_safe_usb_ui_tune.py upstream | tee out/UI-FIRST-FRAME-CHECK.txt
+          python3 scripts/verify_psa_rom.py upstream | tee out/ROM-SOURCE-CHECK.txt
+          python3 scripts/test_psa_rom_guards.py upstream 2>&1 | tee out/ROM-GUARD-TESTS.txt
           python3 scripts/verify_formal_tree.py upstream | tee out/SOURCE-CHECK.txt
           python3 upstream/scripts/check_public_tree.py
           git -C upstream diff --stat > out/BASELINE-DELTA.txt
@@ -52,12 +81,22 @@ jobs:
         run: |
           cd upstream
           chmod +x gradlew
-          ./gradlew :shared:testDebugUnitTest :common:testDebugUnitTest :home:testDebugUnitTest :mobile:lintDebug :home:lintDebug :maphost:lintDebug :mobile:assembleDebug :home:assembleDebug :maphost:assembleDebug :mobile:assembleStandaloneDebug --stacktrace
+          set -o pipefail
+          for attempt in 1 2 3; do
+            if ./gradlew :shared:testDebugUnitTest :common:testDebugUnitTest :home:testDebugUnitTest :mobile:lintDebug :home:lintDebug :maphost:lintDebug :mobile:assembleDebug :home:assembleDebug :maphost:assembleDebug :mobile:assembleStandaloneDebug --no-configuration-cache --continue --stacktrace 2>&1 | tee "../out/GRADLE-BUILD-$attempt.txt"; then
+              exit 0
+            fi
+            # Retry only repository throttling; test or compilation failures remain failures.
+            if grep -Eq 'There were failing tests|Compilation error|Compilation failed' "../out/GRADLE-BUILD-$attempt.txt"; then exit 1; fi
+            if ! grep -q 'Received status code 429' "../out/GRADLE-BUILD-$attempt.txt"; then exit 1; fi
+            sleep 15
+          done
+          exit 1
       - name: Inspect APK and collect evidence
         run: |
           APK="$(find upstream/mobile/build/outputs/apk/debug -name '*.apk' -type f | head -n 1)"
           test -n "$APK"
-          cp "$APK" out/PSA-CarPlay-0.2.15-formal-candidate.apk
+          cp "$APK" out/PSA-CarPlay-0.2.15-pr13-test1.apk
           AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -n 1)"
           "$AAPT" dump badging "$APK" > out/APK-INFO.txt
           grep -q "name='com.psa.carplay.dev'" out/APK-INFO.txt
@@ -68,13 +107,15 @@ jobs:
           SIGN="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
           "$SIGN" verify --verbose --print-certs "$APK" > out/APK-SIGNATURE.txt
           cp RELEASE-NOTES-0.2.15.md FORMAL-0.2.15-SOURCE.diff CLEANUP-0.2.15.md out/
+          cp docs/PSA_*.md patches/psa-rom-compat.patch out/
           cd out
           sha256sum *.apk > SHA256SUMS.txt
       - name: Upload APK and all test evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: PSA-CarPlay-0.2.15-formal-candidate
+          name: PSA-CarPlay-0.2.15-pr13-test1
+          overwrite: true
           path: |
             out/
             upstream/shared/build/test-results/

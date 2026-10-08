@@ -1,0 +1,638 @@
+diff --git a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt b/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
+index 76238d6..49881fe 100644
+--- a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
++++ b/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
+@@ -3671,11 +3671,13 @@ class CarPlayHostActivity : ComponentActivity() {
+ 
+     private fun appendLog(message: String) {
+         val safe = DiagnosticRedactor.redact(message) ?: return
+-        sessionLog?.append(formattedLogLine(safe, System.currentTimeMillis()))
++        if (!debugLogsEnabled && PsaDiagnosticPolicy.isVerbose(safe)) return
++        AsyncDiagnosticLog.append(sessionLog, safe)
+     }
+ 
+     private fun appendFileLog(message: String) {
+-        sessionLog?.append(formattedLogLine(message, System.currentTimeMillis()))
++        if (!debugLogsEnabled && PsaDiagnosticPolicy.isVerbose(message)) return
++        AsyncDiagnosticLog.append(sessionLog, message)
+     }
+ 
+     private fun formattedLogLine(message: String, nowMillis: Long): String =
+diff --git a/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt b/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
+index 4b469a4..bd1373c 100644
+--- a/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
++++ b/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
+@@ -147,7 +147,8 @@ class DiPlayActivity : ComponentActivity() {
+             intent.removeExtra("psa_loss_event_nanos")
+             window.decorView.post {
+                 val elapsed = (System.nanoTime() - lossEvent) / 1_000_000
+-                SessionLogFile(java.io.File(filesDir, "disconnect.log")).use { it.append("CONNECTION_STATE state=WAITING_RECONNECT homeResumedMs=$elapsed") }
++                AsyncDiagnosticLog.append(SessionLogFile(java.io.File(filesDir, "logs/disconnect.log")),
++                    "CONNECTION_STATE state=WAITING_RECONNECT homeResumedMs=$elapsed")
+                 android.util.Log.i("PSA", "CONNECTION_STATE state=WAITING_RECONNECT homeResumedMs=$elapsed")
+             }
+         }
+@@ -553,9 +554,6 @@ class DiPlayActivity : ComponentActivity() {
+ 
+     private fun openCarClientWifiSettings() {
+         val wifi = Intent(Settings.ACTION_WIFI_SETTINGS)
+-        if (packageManager.resolveActivity(wifi, 0)?.activityInfo?.packageName == "com.byd.carsettings") {
+-            runCatching { startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)) }
+-        }
+         openSystem(wifi)
+     }
+ 
+diff --git a/common/src/main/java/com/shilapi/xcertplay/PsaDiagnosticPolicy.kt b/common/src/main/java/com/shilapi/xcertplay/PsaDiagnosticPolicy.kt
+new file mode 100644
+index 0000000..eff1cdc
+--- /dev/null
++++ b/common/src/main/java/com/shilapi/xcertplay/PsaDiagnosticPolicy.kt
+@@ -0,0 +1,10 @@
++package com.shilapi.xcertplay
++
++/** Preserve transitions/faults; periodic successful media counters require diagnostic mode. */
++internal object PsaDiagnosticPolicy {
++    fun isVerbose(line: String): Boolean {
++        if (Regex("(?i)(failed|failure|error=|error:|writeErrors=[1-9]|crash|disconnect|first frame|CONNECTION_DIAGNOSTIC)").containsMatchIn(line)) return false
++        return line.contains("audio stats ", true) || line.contains("video stats ", true) ||
++            line.startsWith("TRACE ") || line.contains("decoded buffer", true)
++    }
++}
+diff --git a/common/src/main/java/com/shilapi/xcertplay/SessionLogFile.kt b/common/src/main/java/com/shilapi/xcertplay/SessionLogFile.kt
+index bc6682d..98a1643 100644
+--- a/common/src/main/java/com/shilapi/xcertplay/SessionLogFile.kt
++++ b/common/src/main/java/com/shilapi/xcertplay/SessionLogFile.kt
+@@ -5,9 +5,13 @@ import java.io.File
+ 
+ /** Bounded, private diagnostics. Each write is redacted before touching storage. */
+ internal class SessionLogFile(val file: File) : Closeable {
+-    private val lock = Any()
++    private val lock = locks.computeIfAbsent(file.absolutePath) { Any() }
+     private var closed = false
+-    private val archiveNames = if (file.name == "direct.log") DIRECT_ARCHIVE_NAMES else ARCHIVE_NAMES
++    private val archiveNames = when (file.name) {
++        "direct.log" -> DIRECT_ARCHIVE_NAMES
++        "diplay.log" -> ARCHIVE_NAMES
++        else -> (1..3).map { "${file.nameWithoutExtension}-previous-$it.log" }
++    }
+     fun reset(header: String) = synchronized(lock) {
+         if (!closed) {
+             file.parentFile?.mkdirs()
+@@ -21,7 +25,7 @@ internal class SessionLogFile(val file: File) : Closeable {
+         val safe = DiagnosticRedactor.redact(line) ?: return@synchronized
+         runCatching {
+             file.parentFile?.mkdirs()
+-            if (file.length() > MAX_BYTES) {
++            if (file.length() + (safe + "\n").toByteArray(Charsets.UTF_8).size > MAX_BYTES) {
+                 rotate()
+                 file.writeText("")
+             }
+@@ -43,9 +47,10 @@ internal class SessionLogFile(val file: File) : Closeable {
+     }
+     override fun close() = synchronized(lock) { closed = true }
+     companion object {
++        private val locks = java.util.concurrent.ConcurrentHashMap<String, Any>()
+         const val MAX_BYTES = 512 * 1024L
+         private val ARCHIVE_NAMES = listOf("previous.log") + (2..7).map { "previous-$it.log" }
+         private val DIRECT_ARCHIVE_NAMES = (1..3).map { "direct-previous-$it.log" }
+-        val REPORT_NAMES = ARCHIVE_NAMES.reversed() + listOf("diplay.log") + DIRECT_ARCHIVE_NAMES.reversed() + "direct.log" + "disconnect.log"
++        val REPORT_NAMES = ARCHIVE_NAMES.reversed() + listOf("diplay.log") + DIRECT_ARCHIVE_NAMES.reversed() + "direct.log" + (3 downTo 1).map { "disconnect-previous-$it.log" } + "disconnect.log"
+     }
+ }
+diff --git a/common/src/test/java/com/shilapi/xcertplay/CarPlayHostPreparationTest.kt b/common/src/test/java/com/shilapi/xcertplay/CarPlayHostPreparationTest.kt
+index e211715..7f3b106 100644
+--- a/common/src/test/java/com/shilapi/xcertplay/CarPlayHostPreparationTest.kt
++++ b/common/src/test/java/com/shilapi/xcertplay/CarPlayHostPreparationTest.kt
+@@ -15,7 +15,7 @@ import org.robolectric.annotation.Config
+ import org.robolectric.annotation.LooperMode
+ 
+ @RunWith(RobolectricTestRunner::class)
+-@Config(sdk = [29])
++@Config(sdk = [28, 29])
+ @LooperMode(LooperMode.Mode.PAUSED)
+ class CarPlayHostPreparationTest {
+     private lateinit var activity: CarPlayHostActivity
+@@ -78,6 +78,17 @@ class CarPlayHostPreparationTest {
+         assertEquals(View.VISIBLE, (field("connectionPanel") as View).visibility)
+     }
+ 
++    @Test fun rapidStreamDisconnectAndReentryAlwaysWaitForANewVisibleFrame() {
++        repeat(10) {
++            stream(0, true)
++            assertEquals(View.VISIBLE, (field("connectionPanel") as View).visibility)
++            frame(0, 110)
++            assertEquals(View.GONE, (field("connectionPanel") as View).visibility)
++            stream(0, false)
++            assertEquals(View.VISIBLE, (field("connectionPanel") as View).visibility)
++        }
++    }
++
+     private fun frame(generation: Int, type: Int) {
+         method("onFirstFrameRendered", Int::class.javaPrimitiveType!!, Int::class.javaPrimitiveType!!).invoke(activity, generation, type)
+     }
+diff --git a/common/src/test/java/com/shilapi/xcertplay/PsaDiagnosticRetentionTest.kt b/common/src/test/java/com/shilapi/xcertplay/PsaDiagnosticRetentionTest.kt
+new file mode 100644
+index 0000000..b68dfd0
+--- /dev/null
++++ b/common/src/test/java/com/shilapi/xcertplay/PsaDiagnosticRetentionTest.kt
+@@ -0,0 +1,34 @@
++package com.shilapi.xcertplay
++import java.nio.file.Files
++import org.junit.Assert.*
++import org.junit.Test
++class PsaDiagnosticRetentionTest {
++    @Test fun filesRotateBeforeExceedingLimitAndRecentFaultSurvives() {
++        val folder = Files.createTempDirectory("psa-retention").toFile()
++        try {
++            SessionLogFile(folder.resolve("diplay.log")).use { log ->
++                repeat(7000) { log.append("event=" + "x".repeat(650)) }
++                log.append("Audio: renderer failed error=NoSuchMethodError")
++            }
++            val files = folder.listFiles()!!
++            assertTrue(files.size <= 8)
++            assertTrue(files.all { it.length() <= SessionLogFile.MAX_BYTES })
++            assertTrue(folder.resolve("diplay.log").readText().contains("NoSuchMethodError"))
++        } finally { folder.deleteRecursively() }
++    }
++    @Test fun disconnectArchivesDoNotOverwriteAudioVideoEvidence() {
++        val folder = Files.createTempDirectory("psa-separated-retention").toFile()
++        try {
++            folder.resolve("previous.log").writeText("Audio: renderer failed")
++            SessionLogFile(folder.resolve("disconnect.log")).use { log -> repeat(900) { log.append("disconnect " + "x".repeat(650)) } }
++            assertEquals("Audio: renderer failed", folder.resolve("previous.log").readText())
++            assertTrue(folder.resolve("disconnect-previous-1.log").exists())
++        } finally { folder.deleteRecursively() }
++    }
++    @Test fun detailedCountersRequireDebugButFaultsAndFirstFrameDoNot() {
++        assertTrue(PsaDiagnosticPolicy.isVerbose("audio stats rx=100"))
++        assertFalse(PsaDiagnosticPolicy.isVerbose("audio stats writeErrors=3"))
++        assertFalse(PsaDiagnosticPolicy.isVerbose("Video: first frame rendered"))
++        assertFalse(PsaDiagnosticPolicy.isVerbose("Audio: cleanup failed"))
++    }
++}
+diff --git a/common/src/test/java/com/shilapi/xcertplay/PsaLauncherReturnTest.kt b/common/src/test/java/com/shilapi/xcertplay/PsaLauncherReturnTest.kt
+new file mode 100644
+index 0000000..3caf590
+--- /dev/null
++++ b/common/src/test/java/com/shilapi/xcertplay/PsaLauncherReturnTest.kt
+@@ -0,0 +1,48 @@
++package com.shilapi.xcertplay
++
++import android.content.Intent
++import org.junit.Assert.*
++import org.junit.Test
++import org.junit.runner.RunWith
++import org.robolectric.Robolectric
++import org.robolectric.RobolectricTestRunner
++import org.robolectric.Shadows.shadowOf
++import org.robolectric.annotation.Config
++import org.robolectric.annotation.LooperMode
++import java.util.concurrent.ExecutorService
++
++@RunWith(RobolectricTestRunner::class)
++@Config(sdk = [28])
++@LooperMode(LooperMode.Mode.PAUSED)
++class PsaLauncherReturnTest {
++    @Test fun wifiSettingsDoesNotInsertALauncherHomeHop() {
++        val activity = Robolectric.buildActivity(DiPlayActivity::class.java).get()
++        val info = android.content.pm.ResolveInfo().apply {
++            activityInfo = android.content.pm.ActivityInfo().apply { packageName = "com.byd.carsettings"; name = "WifiSettings"; exported = true }
++        }
++        shadowOf(activity.packageManager).addResolveInfoForIntent(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS), info)
++        activity.javaClass.getDeclaredMethod("openCarClientWifiSettings").apply { isAccessible = true }.invoke(activity)
++        val intent = shadowOf(activity).nextStartedActivity
++        assertEquals(android.provider.Settings.ACTION_WIFI_SETTINGS, intent.action)
++        assertFalse(intent.hasCategory(Intent.CATEGORY_HOME))
++        assertNull(shadowOf(activity).nextStartedActivity)
++    }
++
++    @Test fun terminalDisconnectStartsPsaHomeInsteadOfLauncherHomeIntent() {
++        val activity = Robolectric.buildActivity(CarPlayHostActivity::class.java).get()
++        try {
++            activity.javaClass.getDeclaredMethod("buildContentView").apply { isAccessible = true }.invoke(activity)
++            activity.javaClass.getDeclaredMethod("returnHomeAfterConfirmedLoss", String::class.java, Long::class.javaPrimitiveType)
++                .apply { isAccessible = true }.invoke(activity, "TEST_TERMINAL", System.nanoTime())
++            val intent = shadowOf(activity).nextStartedActivity
++            assertEquals(DiPlayActivity::class.java.name, intent.component!!.className)
++            assertEquals("home", intent.getStringExtra("page"))
++            assertTrue(intent.flags and Intent.FLAG_ACTIVITY_CLEAR_TOP != 0)
++            assertFalse(intent.hasCategory(Intent.CATEGORY_HOME))
++            assertTrue(activity.isFinishing)
++        } finally {
++            for (name in listOf("teardownExecutor", "airPlayCommandExecutor"))
++                (activity.javaClass.getDeclaredField(name).apply { isAccessible = true }.get(activity) as ExecutorService).shutdownNow()
++        }
++    }
++}
+diff --git a/common/src/test/java/com/shilapi/xcertplay/PsaSurfaceLifecycleTest.kt b/common/src/test/java/com/shilapi/xcertplay/PsaSurfaceLifecycleTest.kt
+new file mode 100644
+index 0000000..1f53f5b
+--- /dev/null
++++ b/common/src/test/java/com/shilapi/xcertplay/PsaSurfaceLifecycleTest.kt
+@@ -0,0 +1,28 @@
++package com.shilapi.xcertplay
++import android.graphics.SurfaceTexture
++import android.view.Surface
++import com.shilapi.xcertplay.media.AndroidMediaSink
++import org.junit.Assert.*
++import org.junit.Test
++import org.junit.runner.RunWith
++import org.robolectric.RobolectricTestRunner
++import org.robolectric.annotation.Config
++@RunWith(RobolectricTestRunner::class)
++@Config(sdk = [28])
++class PsaSurfaceLifecycleTest {
++    @Test fun oldSurfaceDestructionDoesNotDetachTheNewH264Target() {
++        val firstTexture = SurfaceTexture(1); val secondTexture = SurfaceTexture(2)
++        val first = Surface(firstTexture); val second = Surface(secondTexture)
++        val sink = AndroidMediaSink()
++        try {
++            sink.setSurface(110, first); sink.setSurface(110, second)
++            sink.clearSurface(110, first)
++            val targets = sink.javaClass.getDeclaredField("surfaces").apply { isAccessible = true }.get(sink) as Map<*, *>
++            assertSame(second, targets[110])
++            sink.clearSurface(110, second)
++            assertNull(targets[110])
++        } finally {
++            sink.close(); first.release(); second.release(); firstTexture.release(); secondTexture.release()
++        }
++    }
++}
+diff --git a/common/src/test/java/com/shilapi/xcertplay/PsaWideHomeTest.kt b/common/src/test/java/com/shilapi/xcertplay/PsaWideHomeTest.kt
+index e8175b5..409c3c8 100644
+--- a/common/src/test/java/com/shilapi/xcertplay/PsaWideHomeTest.kt
++++ b/common/src/test/java/com/shilapi/xcertplay/PsaWideHomeTest.kt
+@@ -20,7 +20,7 @@ class PsaWideHomeTest {
+     private fun checkHome() {
+         val activity = Robolectric.buildActivity(DiPlayActivity::class.java).get()
+         DiPlayActivity::class.java.getDeclaredMethod("render").apply { isAccessible = true }.invoke(activity)
+-        val root = activity.findViewById<ViewGroup>(android.R.id.content)
++        val root = activity.window.decorView as ViewGroup
+         root.measure(View.MeasureSpec.makeMeasureSpec(1920, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(720, View.MeasureSpec.EXACTLY))
+         root.layout(0, 0, 1920, 720)
+         fun descendants(v: View): List<View> = listOf(v) + if (v is ViewGroup) (0 until v.childCount).flatMap { descendants(v.getChildAt(it)) } else emptyList()
+@@ -31,7 +31,7 @@ class PsaWideHomeTest {
+             assertNotNull("Missing $title; visible labels=${controls.map { it.text }}", control)
+             control!!
+             val rect = android.graphics.Rect()
+-            assertTrue(title, control.getGlobalVisibleRect(rect))
++            assertTrue("$title not visible; control=${control.width}x${control.height} root=${root.width}x${root.height}", control.getGlobalVisibleRect(rect))
+             assertTrue("$title clipped: $rect", rect.width() >= control.width && rect.height() >= control.height)
+         }
+     }
+diff --git a/mobile/build.gradle.kts b/mobile/build.gradle.kts
+index 52daf99..30c58c4 100644
+--- a/mobile/build.gradle.kts
++++ b/mobile/build.gradle.kts
+@@ -18,7 +18,7 @@ android {
+         minSdk = 28
+         targetSdk = 37
+         versionCode = 215
+-        versionName = "0.2.15"
++        versionName = "0.2.15-rom-test1"
+ 
+     }
+ 
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/media/AndroidMediaSink.kt b/shared/src/main/java/com/shilapi/xcertplay/media/AndroidMediaSink.kt
+index f6dbc82..e37e65e 100644
+--- a/shared/src/main/java/com/shilapi/xcertplay/media/AndroidMediaSink.kt
++++ b/shared/src/main/java/com/shilapi/xcertplay/media/AndroidMediaSink.kt
+@@ -873,6 +873,8 @@ private class AudioRenderer(
+             }
+         } finally {
+             runCatching { logStatsIfDue(force = true) }
++            running = false
++            queue.clear()
+             release()
+         }
+     }
+@@ -899,16 +901,15 @@ private class AudioRenderer(
+                     "csd0=${aacAudioSpecificConfig().toHexString()}",
+             )
+         }
+-        codec = try {
+-            MediaCodec.createDecoderByType(mime).also {
++        codec = RomAudioGuard.initialize(
++            create = { MediaCodec.createDecoderByType(mime) },
++            configure = {
+                 it.configure(mediaFormat, null, null, 0)
+                 it.start()
+                 Log.i(TAG, "audio decoder configured mime=$mime name=${it.name}")
+-            }
+-        } catch (error: Exception) {
+-            Log.e(TAG, "audio decoder configuration failed mime=$mime", error)
+-            null
+-        }
++            },
++            release = { it.release() },
++        )
+     }
+ 
+     private fun createTrack() {
+@@ -917,8 +918,7 @@ private class AudioRenderer(
+         else AndroidAudioFormat.CHANNEL_OUT_MONO
+         val minBuffer = AudioTrack.getMinBufferSize(format.sampleRate, channelMask, encoding)
+         if (minBuffer <= 0) {
+-            Log.e(TAG, "AudioTrack buffer size unavailable rate=${format.sampleRate} channels=${format.channels}")
+-            return
++            throw IllegalStateException("AudioTrack buffer size unavailable rate=${format.sampleRate} channels=${format.channels} result=$minBuffer")
+         }
+         val selection = mappedSelection()
+         mappedChannel = selection.channel
+@@ -963,7 +963,8 @@ private class AudioRenderer(
+                 },
+             )
+         }
+-        track = built
++        track = built // Own the resource before any ROM property can throw.
++        RomAudioGuard.requireInitialized(built) { it.state == AudioTrack.STATE_INITIALIZED }
+         // Some Android 9 car ROMs omit AudioTrack.getAudioAttributes().
+         // Keep the attributes chosen at construction time (including fallback).
+         val capacityBytes = built.bufferSizeInFrames * frameBytes
+@@ -1379,39 +1380,25 @@ private class AudioRenderer(
+ 
+     @Synchronized
+     private fun release() {
+-        abandonAudioFocus()
++        fun cleanup(operation: () -> Unit) {
++            RomAudioGuard.attempt({ error ->
++                Log.e(TAG, "audio resource cleanup failed", error)
++                report("Audio: cleanup failed audioType=${format.audioType} error=${error.javaClass.simpleName}")
++            }, operation)
++        }
++        cleanup { abandonAudioFocus() }
+         val codec = codec
+         this.codec = null
+         if (codec != null) {
+-            try {
+-                codec.stop()
+-            } catch (_: Exception) {
+-                // Best effort.
+-            }
+-            try {
+-                codec.release()
+-            } catch (_: Exception) {
+-                // Best effort.
+-            }
++            cleanup { codec.stop() }
++            cleanup { codec.release() }
+         }
+         val track = track
+         this.track = null
+         if (track != null) {
+-            try {
+-                track.pause()
+-            } catch (_: Exception) {
+-                // Best effort.
+-            }
+-            try {
+-                track.flush()
+-            } catch (_: Exception) {
+-                // Best effort.
+-            }
+-            try {
+-                track.release()
+-            } catch (_: Exception) {
+-                // Best effort.
+-            }
++            cleanup { track.pause() }
++            cleanup { track.flush() }
++            cleanup { track.release() }
+         }
+     }
+ 
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/media/LegacyAudioFallback.kt b/shared/src/main/java/com/shilapi/xcertplay/media/LegacyAudioFallback.kt
+index 2c98e80..0631f42 100644
+--- a/shared/src/main/java/com/shilapi/xcertplay/media/LegacyAudioFallback.kt
++++ b/shared/src/main/java/com/shilapi/xcertplay/media/LegacyAudioFallback.kt
+@@ -8,10 +8,11 @@ internal object LegacyAudioFallback {
+         release: (T) -> Unit,
+         createFallback: () -> T,
+     ): T {
+-        val candidate = try { createLegacy() } catch (_: RuntimeException) { null }
++        val candidate = try { createLegacy() } catch (_: RuntimeException) { null } catch (_: LinkageError) { null }
+         if (candidate != null) {
+-            if (isInitialized(candidate)) return candidate
+-            release(candidate)
++            val ready = try { isInitialized(candidate) } catch (_: RuntimeException) { false } catch (_: LinkageError) { false }
++            if (ready) return candidate
++            RomAudioGuard.attempt({}, { release(candidate) })
+         }
+         return createFallback()
+     }
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/media/RomAudioGuard.kt b/shared/src/main/java/com/shilapi/xcertplay/media/RomAudioGuard.kt
+new file mode 100644
+index 0000000..e57ffc7
+--- /dev/null
++++ b/shared/src/main/java/com/shilapi/xcertplay/media/RomAudioGuard.kt
+@@ -0,0 +1,35 @@
++package com.shilapi.xcertplay.media
++
++/** Small boundary for vendor framework failures; VM failures are deliberately not swallowed. */
++internal object RomAudioGuard {
++    fun attempt(report: (Throwable) -> Unit, operation: () -> Unit): Boolean = try {
++        operation()
++        true
++    } catch (error: Exception) {
++        runCatching { report(error) }
++        false
++    } catch (error: LinkageError) {
++        runCatching { report(error) }
++        false
++    }
++
++    /** Publish a decoder only after configuration succeeds; release partial construction. */
++    fun <T> initialize(create: () -> T, configure: (T) -> Unit, release: (T) -> Unit): T {
++        val resource = create()
++        try {
++            configure(resource)
++            return resource
++        } catch (error: Exception) {
++            attempt({}, { release(resource) })
++            throw error
++        } catch (error: LinkageError) {
++            attempt({}, { release(resource) })
++            throw error
++        }
++    }
++
++    fun <T> requireInitialized(track: T, initialized: (T) -> Boolean): T {
++        check(initialized(track)) { "AudioTrack initialization failed" }
++        return track
++    }
++}
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/network/ExistingWifiManager.kt b/shared/src/main/java/com/shilapi/xcertplay/network/ExistingWifiManager.kt
+index f2481ec..fd6bc3b 100644
+--- a/shared/src/main/java/com/shilapi/xcertplay/network/ExistingWifiManager.kt
++++ b/shared/src/main/java/com/shilapi/xcertplay/network/ExistingWifiManager.kt
+@@ -114,7 +114,8 @@ class ExistingWifiManager(
+         val started = System.nanoTime()
+         while (!closed) {
+             // INTERNET/VALIDATED and the default route do not identify the CarPlay LAN.
+-            val networks = candidates()
++            val networks = LanNetworkSelection.stationCandidates(candidates(),
++                runCatching { wifi.connectionInfo?.ipAddress ?: 0 }.getOrDefault(0))
+ 
+             onDiagnostic("LAN network snapshot candidates=${networks.size} links=${networks.map { it.interfaceName to it.addresses }.distinct().size} " +
+                 "interfaces=${networks.map { it.interfaceName }.distinct().joinToString(",")} policy=${if (ipv4Priority) "IPv4_EXPERIMENT" else "DUAL_STACK"}")
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/network/LanNetworkSelection.kt b/shared/src/main/java/com/shilapi/xcertplay/network/LanNetworkSelection.kt
+index 75855fa..f5e0c5d 100644
+--- a/shared/src/main/java/com/shilapi/xcertplay/network/LanNetworkSelection.kt
++++ b/shared/src/main/java/com/shilapi/xcertplay/network/LanNetworkSelection.kt
+@@ -5,6 +5,12 @@ data class LanNetworkCandidate<T>(val handle: T, val interfaceName: String,
+     val addresses: Set<String>)
+ 
+ object LanNetworkSelection {
++    fun <T> stationCandidates(candidates: List<LanNetworkCandidate<T>>, stationIpv4: Int): List<LanNetworkCandidate<T>> {
++        if (stationIpv4 == 0) return candidates // IPv6-only/ROM-hidden identity: retain normal ambiguity checks.
++        val address = (0..3).joinToString(".") { ((stationIpv4 ushr (it * 8)) and 255).toString() }
++        return candidates.filter { address in it.addresses }
++    }
++
+     fun <T> choose(candidates: List<LanNetworkCandidate<T>>, active: T?): LanNetworkCandidate<T>? {
+         val live = candidates.filter { it.interfaceName.isNotBlank() && it.addresses.isNotEmpty() }
+         if (live.isEmpty()) return null
+diff --git a/shared/src/test/java/com/shilapi/xcertplay/media/PsaRomAudioGuardTest.kt b/shared/src/test/java/com/shilapi/xcertplay/media/PsaRomAudioGuardTest.kt
+new file mode 100644
+index 0000000..7b59a02
+--- /dev/null
++++ b/shared/src/test/java/com/shilapi/xcertplay/media/PsaRomAudioGuardTest.kt
+@@ -0,0 +1,48 @@
++package com.shilapi.xcertplay.media
++
++import org.junit.Assert.*
++import org.junit.Test
++
++class PsaRomAudioGuardTest {
++    @Test fun missingRomMethodIsReportedWithoutEscapingWorkerBoundary() {
++        val failures = mutableListOf<Throwable>()
++        assertFalse(RomAudioGuard.attempt({ failures += it }) { throw NoSuchMethodError("vendor audio API") })
++        assertTrue(failures.single() is NoSuchMethodError)
++        assertTrue(RomAudioGuard.attempt({ fail("A new session must still be able to play") }) {})
++    }
++    @Test fun decoderConfigureFailureReleasesPartialDecoderAndPropagatesCause() {
++        val events = mutableListOf<String>()
++        val failure = assertThrows(IllegalStateException::class.java) {
++            RomAudioGuard.initialize<String>({ "decoder" }, { throw IllegalStateException("configure rejected") }, { events += "release:$it" })
++        }
++        assertEquals("configure rejected", failure.message)
++        assertEquals(listOf("release:decoder"), events)
++    }
++    @Test fun decoderCreationFailureDoesNotReleaseAnUncreatedResource() {
++        assertThrows(NoSuchMethodError::class.java) {
++            RomAudioGuard.initialize<String>({ throw NoSuchMethodError("createDecoder") }, { fail() }, { fail() })
++        }
++    }
++    @Test fun cleanupFailureDoesNotPreventRemainingResourceRelease() {
++        val failures = mutableListOf<Throwable>()
++        var released = false
++        assertFalse(RomAudioGuard.attempt({ failures += it }) { throw NoSuchMethodError("stop") })
++        assertTrue(RomAudioGuard.attempt({ fail() }) { released = true })
++        assertTrue(released); assertEquals(1, failures.size)
++    }
++    @Test fun uninitializedTrackCannotBeReportedReady() {
++        assertThrows(IllegalStateException::class.java) { RomAudioGuard.requireInitialized("track") { false } }
++        assertEquals("track", RomAudioGuard.requireInitialized("track") { true })
++    }
++    @Test fun missingLegacyConstructorFallsBackToPlayableUsageTrack() {
++        assertEquals("usage", LegacyAudioFallback.build<String>(
++            { throw NoSuchMethodError("legacy ctor") }, { fail(); false }, { fail() }, { "usage" }))
++    }
++    @Test fun releaseOfRejectedLegacyTrackCannotBlockFallback() {
++        assertEquals("usage", LegacyAudioFallback.build({ "legacy" }, { false },
++            { throw NoSuchMethodError("release") }, { "usage" }))
++    }
++    @Test fun fatalVmFailuresAreNotMistakenForRomCompatibilityErrors() {
++        assertThrows(OutOfMemoryError::class.java) { RomAudioGuard.attempt({ fail() }) { throw OutOfMemoryError() } }
++    }
++}
+diff --git a/shared/src/test/java/com/shilapi/xcertplay/media/PsaRomAudioWorkerTest.kt b/shared/src/test/java/com/shilapi/xcertplay/media/PsaRomAudioWorkerTest.kt
+new file mode 100644
+index 0000000..7996e97
+--- /dev/null
++++ b/shared/src/test/java/com/shilapi/xcertplay/media/PsaRomAudioWorkerTest.kt
+@@ -0,0 +1,54 @@
++package com.shilapi.xcertplay.media
++
++import android.media.AudioTrack
++import android.media.MediaCodec
++import com.shilapi.xcertplay.airplay.AudioCodecKind
++import com.shilapi.xcertplay.airplay.AudioFormat
++import org.junit.Assert.*
++import org.junit.Test
++import org.junit.runner.RunWith
++import org.robolectric.RobolectricTestRunner
++import org.robolectric.annotation.Config
++import org.robolectric.annotation.Implementation
++import org.robolectric.annotation.Implements
++
++/** Execute the real private renderer worker with a deliberately incomplete API-28 ROM. */
++@RunWith(RobolectricTestRunner::class)
++@Config(sdk = [28], manifest = Config.NONE, shadows = [PsaRomAudioWorkerTest.MissingTrackApi::class, PsaRomAudioWorkerTest.MissingDecoderApi::class])
++class PsaRomAudioWorkerTest {
++    @Implements(AudioTrack::class)
++    class MissingTrackApi {
++        companion object {
++            @JvmStatic @Implementation
++            fun getMinBufferSize(rate: Int, mask: Int, encoding: Int): Int {
++                throw NoSuchMethodError("simulated vendor audio API missing")
++            }
++        }
++    }
++    @Implements(MediaCodec::class)
++    class MissingDecoderApi {
++        companion object {
++            @JvmStatic @Implementation
++            fun createDecoderByType(mime: String): MediaCodec {
++                throw IllegalStateException("simulated decoder creation failure")
++            }
++        }
++    }
++    private fun runWorker(codec: AudioCodecKind): List<String> {
++        val reports = mutableListOf<String>()
++        val type = Class.forName("com.shilapi.xcertplay.media.AudioRenderer")
++        val renderer = type.declaredConstructors.single().apply { isAccessible = true }.newInstance(
++            AudioFormat(codec, 48000, 2, 100), false, false, 0, 0,
++            AudioFocusCoordinator(null, false), 0, 120, { line: String -> reports.add(line); Unit })
++        type.getDeclaredMethod("run").apply { isAccessible = true }.invoke(renderer)
++        assertFalse(type.getDeclaredField("running").apply { isAccessible = true }.getBoolean(renderer))
++        assertFalse(reports.any { it.contains("Audio: ready") })
++        return reports
++    }
++    @Test fun missingFrameworkMethodCannotEscapeRealAudioWorker() {
++        assertTrue(runWorker(AudioCodecKind.LPCM).any { it.contains("unsupported ROM API") && it.contains("NoSuchMethodError") })
++    }
++    @Test fun decoderCreationFailureIsRecordedAndCannotKillApp() {
++        assertTrue(runWorker(AudioCodecKind.AAC_LC).any { it.contains("renderer failed") && it.contains("IllegalStateException") })
++    }
++}
+diff --git a/shared/src/test/java/com/shilapi/xcertplay/network/PsaStationLinkTest.kt b/shared/src/test/java/com/shilapi/xcertplay/network/PsaStationLinkTest.kt
+new file mode 100644
+index 0000000..f0d793e
+--- /dev/null
++++ b/shared/src/test/java/com/shilapi/xcertplay/network/PsaStationLinkTest.kt
+@@ -0,0 +1,24 @@
++package com.shilapi.xcertplay.network
++import org.junit.Assert.*
++import org.junit.Test
++class PsaStationLinkTest {
++    private val sta = LanNetworkCandidate(1, "wlan0", setOf("192.0.2.21"))
++    private val ap = LanNetworkCandidate(2, "ap0", setOf("198.51.100.1"))
++    private val ip = 192 or (0 shl 8) or (2 shl 16) or (21 shl 24)
++    @Test fun systemHotspotDefaultCannotOverrideActualStationAddress() {
++        val candidates = LanNetworkSelection.stationCandidates(listOf(ap, sta), ip)
++        assertEquals(sta, LanNetworkSelection.choose(candidates, ap.handle))
++    }
++    @Test fun interfaceNamesAreNotDeviceConstants() {
++        val renamed = sta.copy(interfaceName = "wifi_vendor42")
++        assertEquals(renamed, LanNetworkSelection.stationCandidates(listOf(ap, renamed), ip).single())
++    }
++    @Test fun duplicateStationHandlesRemainValid() {
++        val alias = sta.copy(handle = 3)
++        assertEquals(alias, LanNetworkSelection.choose(LanNetworkSelection.stationCandidates(listOf(sta, ap, alias), ip), 3))
++    }
++    @Test fun unavailableIpv4RetainsIpv6AndExistingAmbiguityChecks() {
++        assertEquals(listOf(sta, ap), LanNetworkSelection.stationCandidates(listOf(sta, ap), 0))
++        assertThrows(LanConnectionException::class.java) { LanNetworkSelection.choose(listOf(sta, ap), null) }
++    }
++}
