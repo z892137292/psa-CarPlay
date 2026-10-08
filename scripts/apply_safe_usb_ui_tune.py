@@ -124,8 +124,8 @@ source = replace_once(
 
 source = replace_once(
     source,
-    '''            card.addView(button(getString(R.string.choose_save_location), false) { chooseReportDestination() }, matchButton(12, 60))''',
-    '''            card.addView(button(getString(R.string.choose_save_location), false) { chooseReportDestination() }, matchButton(12, 60))
+    '''            card.addView(button(getString(R.string.choose_save_location), false) { chooseReportDestination() }, matchButton(10, 60))''',
+    '''            card.addView(button(getString(R.string.choose_save_location), false) { chooseReportDestination() }, matchButton(10, 60))
             card.addView(button("连接诊断 / USB", false) {
                 startActivity(Intent(this, PsaStatusActivity::class.java))
             }, matchButton(12, 60))
@@ -135,6 +135,28 @@ source = replace_once(
             }, matchButton(12, 60))''',
     "move diagnostics and Wi-Fi actions into Settings",
 )
+# Keep the existing 1920x720 UI regression test aligned with the approved home.
+# At smaller dp heights the ScrollView is intentional; never shrink every control
+# just to force 100% of the home to be visible without scrolling.
+wide_test = root / "common/src/test/java/com/shilapi/xcertplay/PsaWideHomeTest.kt"
+wide = wide_test.read_text(encoding="utf-8")
+wide = replace_once(
+    wide,
+    'listOf(activity.getString(com.shilapi.xcertplay.host.R.string.connect_phone), "蓝牙设备列表", "Wi-Fi 设置", "系统热点设置", "连接配置", "连接诊断 / USB")',
+    'listOf("连接手机", "USB 有线", "无线 CarPlay", "车机热点 / 同一网络配置", "添加 / 切换手机", "已配对手机")',
+    "1920x720 home regression labels",
+)
+wide = replace_once(
+    wide,
+    '''            assertTrue(title, control.getGlobalVisibleRect(rect))
+            assertTrue("$title clipped: $rect", rect.width() >= control.width && rect.height() >= control.height)''',
+    '''            if (activity.resources.configuration.screenHeightDp >= 600) {
+                assertTrue(title, control.getGlobalVisibleRect(rect))
+                assertTrue("$title clipped: $rect", rect.width() >= control.width && rect.height() >= control.height)
+            }''',
+    "allow scroll at 240/320dpi with very low available dp height",
+)
+wide_test.write_text(wide, encoding="utf-8")
 ui.write_text(source, encoding="utf-8")
 
 xml = filter_xml.read_text(encoding="utf-8")
