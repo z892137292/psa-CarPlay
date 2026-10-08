@@ -1,5 +1,5 @@
 diff --git a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt b/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
-index 49881fe..778c5e9 100644
+index 49881fe..1d77cc3 100644
 --- a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
 +++ b/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
 @@ -337,6 +337,8 @@ class CarPlayHostActivity : ComponentActivity() {
@@ -29,7 +29,7 @@ index 49881fe..778c5e9 100644
              }
              currentSurface = null
              currentSurfaceTexture = null
-+            cancelFirstFrameWait()
++            // Keep an existing foreground deadline across Surface recreation.
              mainFirstFrameReady = false
              updateDebugOverlays()
              appendLog("Texture surface destroyed")
@@ -298,10 +298,10 @@ index af12f2a..10ac3c9 100644
  </resources>
 diff --git a/common/src/test/java/com/shilapi/xcertplay/PsaFirstFrameReleaseGateTest.kt b/common/src/test/java/com/shilapi/xcertplay/PsaFirstFrameReleaseGateTest.kt
 new file mode 100644
-index 0000000..6862019
+index 0000000..97f3eb3
 --- /dev/null
 +++ b/common/src/test/java/com/shilapi/xcertplay/PsaFirstFrameReleaseGateTest.kt
-@@ -0,0 +1,132 @@
+@@ -0,0 +1,144 @@
 +package com.shilapi.xcertplay
 +
 +import android.content.Intent
@@ -416,6 +416,18 @@ index 0000000..6862019
 +        assertSame(c,field(a,"controller").get(a))
 +        verify(c,never()).start(); verify(c,never()).close()
 +        assertNull(shadowOf(a).nextStartedActivity)
++    }
++    @Test fun surfaceDestructionCannotExtendAnExistingNoVideoDeadline() = withHost { a,_ ->
++        val texture=mock(android.graphics.SurfaceTexture::class.java)
++        field(a,"currentSurfaceTexture").set(a,texture)
++        call(a,"armFirstFrameWait")
++        val deadline=field(a,"firstFrameTimeout").get(a)
++        shadowOf(android.os.Looper.getMainLooper()).idleFor(Duration.ofSeconds(80))
++        val listener=field(a,"textureListener").get(a) as android.view.TextureView.SurfaceTextureListener
++        listener.onSurfaceTextureDestroyed(texture)
++        assertSame(deadline,field(a,"firstFrameTimeout").get(a))
++        shadowOf(android.os.Looper.getMainLooper()).idleFor(Duration.ofSeconds(10))
++        assertTrue(a.isFinishing)
 +    }
 +    @Test fun staleSurfaceSizeCallbackCannotRenegotiateCurrentDisplay() = withHost { a,_ ->
 +        val stale=mock(android.graphics.SurfaceTexture::class.java)

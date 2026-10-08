@@ -9,7 +9,7 @@
 - updateDebugOverlays：只有 mainFirstFrameReady 且主视频流 active 才隐藏准备面板。Controller 启动、SETUP、收到数据或解码器创建均不能代替真正首帧。
 - textureListener/onFirstFrameRendered：当前 Texture 更新证据和会话 generation 校验保留；增加主流 active 检查，忽略旧 Surface 的尺寸回调。
 - armFirstFrameWait/onFirstFrameTimeout：Controller 启动后前台等待首帧最多 90 秒；未显示首帧则记录 FIRST_FRAME_TIMEOUT，回 PSA 首页，后台安全清理；人工重试，不缩短 USB/iAP2/MFi 协议超时。
-- onPause/onResume/onDestroy：暂停时取消 UI 首帧计时，恢复时重新等待；不因暂停释放 Controller。已显示首帧不再计时，旧 generation 计时回调无效。
+- onPause/onResume/onDestroy：暂停时取消 UI 首帧计时，恢复时重新等待；不因暂停释放 Controller。已显示首帧不再计时，旧 generation 计时回调无效；同一前台会话重建 Surface 不延长已有截止时间。
 - DiPlayActivity consumeConnectionFailure/refreshStatus：超时结果在刷新后仍可见，用户能重新选择连接方式；等待旧控制器退出时仍禁止新控制器。
 - onNewIntent：重复有线 USB 接入复用已有 Controller，清理期间不重复切换；核心 USBMUX/iAP2/NCM/VPN/MFi 不修改。
 
