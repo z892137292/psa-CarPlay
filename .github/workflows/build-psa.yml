@@ -81,7 +81,17 @@ jobs:
         run: |
           cd upstream
           chmod +x gradlew
-          ./gradlew :shared:testDebugUnitTest :common:testDebugUnitTest :home:testDebugUnitTest :mobile:lintDebug :home:lintDebug :maphost:lintDebug :mobile:assembleDebug :home:assembleDebug :maphost:assembleDebug :mobile:assembleStandaloneDebug --continue --stacktrace
+          set -o pipefail
+          for attempt in 1 2 3; do
+            if ./gradlew :shared:testDebugUnitTest :common:testDebugUnitTest :home:testDebugUnitTest :mobile:lintDebug :home:lintDebug :maphost:lintDebug :mobile:assembleDebug :home:assembleDebug :maphost:assembleDebug :mobile:assembleStandaloneDebug --no-configuration-cache --continue --stacktrace 2>&1 | tee "../out/GRADLE-BUILD-$attempt.txt"; then
+              exit 0
+            fi
+            # Retry only repository throttling; test or compilation failures remain failures.
+            if grep -Eq 'There were failing tests|Compilation error|Compilation failed' "../out/GRADLE-BUILD-$attempt.txt"; then exit 1; fi
+            if ! grep -q 'Received status code 429' "../out/GRADLE-BUILD-$attempt.txt"; then exit 1; fi
+            sleep 15
+          done
+          exit 1
       - name: Inspect APK and collect evidence
         run: |
           APK="$(find upstream/mobile/build/outputs/apk/debug -name '*.apk' -type f | head -n 1)"
@@ -105,6 +115,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: PSA-CarPlay-0.2.15-pr13-test1
+          overwrite: true
           path: |
             out/
             upstream/shared/build/test-results/
