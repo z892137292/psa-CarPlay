@@ -14,12 +14,18 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - name: Preserve rollback tag
+      - name: Preserve source rollback tag and backup
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          git fetch origin 91e4b3922bc14b2c6d8863cc220d71934650447b
+          mkdir -p out
+          git fetch --unshallow origin
+          git tag rollback/psa-pr13-before-first-frame-review-20261008 91e4b3922bc14b2c6d8863cc220d71934650447b
+          git bundle create out/PSA-PR13-before-first-frame.bundle refs/tags/rollback/psa-pr13-before-first-frame-review-20261008
           if ! git ls-remote --exit-code --tags origin refs/tags/rollback/psa-pr13-before-first-frame-review-20261008; then
-            git tag rollback/psa-pr13-before-first-frame-review-20261008 91e4b3922bc14b2c6d8863cc220d71934650447b
-            git push origin refs/tags/rollback/psa-pr13-before-first-frame-review-20261008
+            if ! gh api repos/${{ github.repository }}/git/refs -f ref=refs/tags/rollback/psa-pr13-before-first-frame-review-20261008 -f sha=91e4b3922bc14b2c6d8863cc220d71934650447b; then
+              echo 'Remote tag unavailable: workflow token permission; local tag and complete git bundle preserved.' > out/ROLLBACK-TAG-STATUS.txt
+            fi
           fi
       - uses: actions/setup-java@v4
         with:

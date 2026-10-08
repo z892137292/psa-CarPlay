@@ -298,10 +298,10 @@ index af12f2a..2354a99 100644
  </resources>
 diff --git a/common/src/test/java/com/shilapi/xcertplay/PsaFirstFrameReleaseGateTest.kt b/common/src/test/java/com/shilapi/xcertplay/PsaFirstFrameReleaseGateTest.kt
 new file mode 100644
-index 0000000..ebe2267
+index 0000000..b0adf9a
 --- /dev/null
 +++ b/common/src/test/java/com/shilapi/xcertplay/PsaFirstFrameReleaseGateTest.kt
-@@ -0,0 +1,103 @@
+@@ -0,0 +1,113 @@
 +package com.shilapi.xcertplay
 +
 +import android.content.Intent
@@ -380,6 +380,16 @@ index 0000000..ebe2267
 +        assertNull(field(a,"firstFrameTimeout").get(a))
 +        assertFalse(a.isFinishing)
 +    }
++    @Test fun realPauseCancelsWaitWithoutReleasingController() = withHost { a,c ->
++        call(a,"armFirstFrameWait")
++        assertNotNull(field(a,"firstFrameTimeout").get(a))
++        call(a,"onPause")
++        assertTrue(field(a,"firstFrameWaitSuspended").getBoolean(a))
++        assertNull(field(a,"firstFrameTimeout").get(a))
++        assertSame(c,field(a,"controller").get(a)); verify(c,never()).close()
++        shadowOf(android.os.Looper.getMainLooper()).idleFor(Duration.ofSeconds(100))
++        assertFalse(a.isFinishing)
++    }
 +    @Test fun duplicateUsbAttachReusesWiredOwnerWithoutAnotherController() = withHost { a,c ->
 +        field(a,"wirelessEnabled").setBoolean(a,false)
 +        val intent=Intent("android.hardware.usb.action.USB_DEVICE_ATTACHED")
@@ -406,10 +416,41 @@ index 0000000..ebe2267
 +    }
 +}
 diff --git a/common/src/test/java/com/shilapi/xcertplay/PsaWideHomeTest.kt b/common/src/test/java/com/shilapi/xcertplay/PsaWideHomeTest.kt
-index 3bc83c2..1bf82b8 100644
+index 3bc83c2..22bbd0e 100644
 --- a/common/src/test/java/com/shilapi/xcertplay/PsaWideHomeTest.kt
 +++ b/common/src/test/java/com/shilapi/xcertplay/PsaWideHomeTest.kt
-@@ -30,6 +30,12 @@ class PsaWideHomeTest {
+@@ -17,6 +17,30 @@ class PsaWideHomeTest {
+     @Test @Config(qualifiers = "w1280dp-h480dp-land-hdpi") fun actionsFitAt240Dpi() = checkHome()
+     @Test @Config(qualifiers = "w960dp-h360dp-land-xhdpi") fun actionsFitAt320Dpi() = checkHome()
+ 
++    @Test fun desktopButtonUsesStandardHomeIntent() {
++        val a=Robolectric.buildActivity(DiPlayActivity::class.java).get()
++        DiPlayActivity::class.java.getDeclaredMethod("render").apply { isAccessible=true }.invoke(a)
++        val views=descendants(a.window.decorView).filterIsInstance<TextView>()
++        views.single { it.text.toString()==a.getString(com.shilapi.xcertplay.host.R.string.car_home) }.performClick()
++        val intent=org.robolectric.Shadows.shadowOf(a).nextStartedActivity
++        assertEquals(android.content.Intent.ACTION_MAIN,intent.action)
++        assertTrue(intent.hasCategory(android.content.Intent.CATEGORY_HOME)); assertNull(intent.component)
++    }
++    @Test fun pairedListUsesActualAdapterDevicesAndSavesSelectedPhone() {
++        val adapter=android.bluetooth.BluetoothAdapter.getDefaultAdapter()
++        val shadow=org.robolectric.Shadows.shadowOf(adapter)
++        shadow.setState(android.bluetooth.BluetoothAdapter.STATE_ON)
++        val phone=adapter.getRemoteDevice("02:11:22:33:44:55")
++        org.robolectric.Shadows.shadowOf(phone).setName("Regression iPhone")
++        shadow.setBondedDevices(setOf(phone))
++        val a=Robolectric.buildActivity(DiPlayActivity::class.java).get()
++        DiPlayActivity::class.java.getDeclaredMethod("render").apply { isAccessible=true }.invoke(a)
++        val button=descendants(a.window.decorView).filterIsInstance<TextView>().single { it.text.toString().contains("Regression iPhone") }
++        button.performClick()
++        assertEquals(phone.address,DiPlayPreferences.phoneAddress(a))
++    }
++    private fun descendants(v: View): List<View> = listOf(v) + if(v is ViewGroup) (0 until v.childCount).flatMap { descendants(v.getChildAt(it)) } else emptyList()
++
+     private fun checkHome() {
+         val activity = Robolectric.buildActivity(DiPlayActivity::class.java).get()
+         DiPlayActivity::class.java.getDeclaredMethod("render").apply { isAccessible = true }.invoke(activity)
+@@ -30,6 +54,12 @@ class PsaWideHomeTest {
              val control = controls.singleOrNull { it.text.toString() == title }
              assertNotNull("Missing $title; visible labels=${controls.map { it.text }}", control)
              control!!
