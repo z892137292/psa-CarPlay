@@ -1,0 +1,58 @@
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/media/AndroidMediaSink.kt b/shared/src/main/java/com/shilapi/xcertplay/media/AndroidMediaSink.kt
+--- a/shared/src/main/java/com/shilapi/xcertplay/media/AndroidMediaSink.kt
++++ b/shared/src/main/java/com/shilapi/xcertplay/media/AndroidMediaSink.kt
+@@ -859,12 +859,19 @@
+             }
+         } catch (_: InterruptedException) {
+             // Worker shut down.
+-        } catch (error: Exception) {
+-            if (running) {
+-                Log.e(TAG, "audio renderer worker failed", error)
+-                report("Audio: renderer failed audioType=${format.audioType} error=${error.javaClass.simpleName}")
+-            }
+-        } finally {
++        } catch (error: Exception) {
++            if (running) {
++                Log.e(TAG, "audio renderer worker failed", error)
++                report("Audio: renderer failed audioType=${format.audioType} error=${error.javaClass.simpleName}")
++            }
++        } catch (error: LinkageError) {
++            // Android vendors may omit framework methods declared by the SDK.
++            // A missing audio API must not crash the entire CarPlay process.
++            if (running) {
++                Log.e(TAG, "audio renderer ROM API unavailable", error)
++                report("Audio: unsupported ROM API audioType=${format.audioType} error=${error.javaClass.simpleName}")
++            }
++        } finally {
+             runCatching { logStatsIfDue(force = true) }
+             release()
+         }
+@@ -945,9 +952,11 @@
+                 createFallback = {
+                     routeLabel = "streamType=$streamType(fallback=usage)"
+                     Log.w(TAG, "streamType=$streamType rejected by this ROM; falling back to usage-based track")
+-                    AudioTrack.Builder()
+-                        .setAudioAttributes(audioAttributesFor(selection))
+-                        .setAudioFormat(pcmFormat(encoding, channelMask))
++                    val fallbackAttributes = audioAttributesFor(selection)
++                    trackAttributes = fallbackAttributes
++                    AudioTrack.Builder()
++                        .setAudioAttributes(fallbackAttributes)
++                        .setAudioFormat(pcmFormat(encoding, channelMask))
+                         .setTransferMode(AudioTrack.MODE_STREAM)
+                         .setBufferSizeInBytes(plan.trackBufferBytes)
+                         .build()
+@@ -954,9 +963,10 @@
+                 },
+             )
+         }
+-        track = built
+-        trackAttributes = built.audioAttributes
+-        val capacityBytes = built.bufferSizeInFrames * frameBytes
++        track = built
++        // Some Android 9 car ROMs omit AudioTrack.getAudioAttributes().
++        // Keep the attributes chosen at construction time (including fallback).
++        val capacityBytes = built.bufferSizeInFrames * frameBytes
+         startThresholdBytes = MediaAudioBuffer.startBytesFor(plan.startBytes, capacityBytes, PREBUFFER_WRITE_CHUNK_BYTES)
+         report("Audio: ready audioType=${format.audioType} codec=${format.codec} " +
+             "rate=${format.sampleRate} channels=${format.channels} " +
