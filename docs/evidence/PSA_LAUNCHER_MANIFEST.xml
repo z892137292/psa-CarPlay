@@ -1,0 +1,98 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" android:versionCode="1190" android:versionName="v202403121759" android:compileSdkVersion="30" android:compileSdkVersionCodename="11" package="com.android.launcher" platformBuildVersionCode="30" platformBuildVersionName="11">
+  <uses-sdk android:minSdkVersion="23" android:targetSdkVersion="27"/>
+  <original-package android:name="com.android.launcher2"/>
+  <permission android:name="com.android.launcher.permission.PRELOAD_WORKSPACE" android:protectionLevel="0x00000012" android:permissionGroup="android.permission-group.SYSTEM_TOOLS"/>
+  <permission android:label="@7F120197" android:name="com.android.launcher.permission.INSTALL_SHORTCUT" android:protectionLevel="0x00000001" android:permissionGroup="android.permission-group.SYSTEM_TOOLS" android:description="@7F120193"/>
+  <permission android:label="@7F120199" android:name="com.android.launcher.permission.UNINSTALL_SHORTCUT" android:protectionLevel="0x00000001" android:permissionGroup="android.permission-group.SYSTEM_TOOLS" android:description="@7F120195"/>
+  <permission android:label="@7F120198" android:name="com.android.launcher.permission.READ_SETTINGS" android:protectionLevel="0x00000000" android:permissionGroup="android.permission-group.SYSTEM_TOOLS" android:description="@7F120194"/>
+  <permission android:label="@7F12019A" android:name="com.android.launcher.permission.WRITE_SETTINGS" android:protectionLevel="0x00000012" android:permissionGroup="android.permission-group.SYSTEM_TOOLS" android:description="@7F120196"/>
+  <uses-permission android:name="android.permission.INTERNET"/>
+  <uses-permission android:name="android.permission.CALL_PHONE"/>
+  <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
+  <uses-permission android:name="android.permission.SET_WALLPAPER"/>
+  <uses-permission android:name="android.permission.SET_WALLPAPER_HINTS"/>
+  <uses-permission android:name="android.permission.VIBRATE"/>
+  <uses-permission android:name="android.permission.BIND_APPWIDGET"/>
+  <uses-permission android:name="android.permission.GET_ACCOUNTS_PRIVILEGED"/>
+  <uses-permission android:name="com.android.launcher.permission.READ_SETTINGS"/>
+  <uses-permission android:name="com.android.launcher.permission.WRITE_SETTINGS"/>
+  <uses-permission android:name="android.permission.INTERACT_ACROSS_USERS"/>
+  <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+  <uses-permission android:name="android.permission.BLUETOOTH"/>
+  <uses-permission android:name="android.car.permission.CONTROL_CAR_CLIMATE"/>
+  <uses-permission android:name="android.permission.WRITE_SETTINGS"/>
+  <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"/>
+  <uses-permission android:name="android.car.permission.CAR_EXTERIOR_ENVIRONMENT"/>
+  <uses-permission android:name="android.car.permission.READ_EXTERNAL_STORAGE"/>
+  <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES"/>
+  <uses-permission android:name="android.permission.FORCE_STOP_PACKAGES"/>
+  <permission android:name="android.car.permission.CAR_VENDOR_EXTENSION"/>
+  <uses-permission android:name="android.car.permission.CAR_VENDOR_EXTENSION"/>
+  <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+  <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"/>
+  <uses-permission android:name="android.permission.CAMERA"/>
+  <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+  <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+  <uses-permission android:name="android.permission.MOUNT_UNMOUNT_FILESYSTEMS"/>
+  <application android:theme="@7F1301AC" android:label="@7F120033" android:icon="@7F0F0002" android:name="com.android.launcher2.LauncherApplication" android:hardwareAccelerated="true" android:largeHeap="@7F050005" android:supportsRtl="true" android:extractNativeLibs="false" android:usesCleartextTraffic="true" android:networkSecurityConfig="@7F150002" android:appComponentFactory="androidx.core.app.CoreComponentFactory">
+    <activity android:name="com.android.launcher2.Launcher" android:excludeFromRecents="true" android:launchMode="2" android:screenOrientation="0" android:configChanges="0x000004F0" android:windowSoftInputMode="0x00000020">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN"/>
+        <category android:name="android.intent.category.HOME"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+        <category android:name="android.intent.category.LAUNCHER"/>
+      </intent-filter>
+      <intent-filter>
+        <action android:name="android.intent.action.HOME"/>
+        <category android:name="android.intent.category.LAUNCHER"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+      </intent-filter>
+    </activity>
+    <activity android:theme="@7F1301FA" android:label="@7F12019B" android:icon="@7F0F0003" android:name="com.android.launcher2.WallpaperChooser" android:process=":wallpaper_chooser" android:finishOnCloseSystemDialogs="true">
+      <intent-filter>
+        <action android:name="android.intent.action.SET_WALLPAPER"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+      </intent-filter>
+      <meta-data android:name="android.wallpaper.preview" android:resource="@7F150009"/>
+    </activity>
+    <receiver android:name="com.android.launcher2.PreloadReceiver" android:permission="com.android.launcher.permission.PRELOAD_WORKSPACE">
+      <intent-filter>
+        <action android:name="com.android.launcher.action.PRELOAD_WORKSPACE"/>
+      </intent-filter>
+    </receiver>
+    <receiver android:name="com.android.launcher2.InstallShortcutReceiver" android:permission="com.android.launcher.permission.INSTALL_SHORTCUT">
+      <intent-filter>
+        <action android:name="com.android.launcher.action.INSTALL_SHORTCUT"/>
+      </intent-filter>
+    </receiver>
+    <receiver android:name="com.android.launcher2.UninstallShortcutReceiver" android:permission="com.android.launcher.permission.UNINSTALL_SHORTCUT">
+      <intent-filter>
+        <action android:name="com.android.launcher.action.UNINSTALL_SHORTCUT"/>
+      </intent-filter>
+    </receiver>
+    <receiver android:name="com.android.launcher2.UserInitializeReceiver" android:exported="false">
+      <intent-filter>
+        <action android:name="android.intent.action.USER_INITIALIZE"/>
+      </intent-filter>
+    </receiver>
+    <receiver android:name="com.android.launcher2.PackageChangedReceiver">
+      <intent-filter>
+        <action android:name="android.intent.action.PACKAGE_CHANGED"/>
+        <action android:name="android.intent.action.PACKAGE_REPLACED"/>
+        <action android:name="android.intent.action.PACKAGE_REMOVED"/>
+        <data android:scheme="package"/>
+      </intent-filter>
+    </receiver>
+    <provider android:name="com.android.launcher2.LauncherProvider" android:readPermission="com.android.launcher.permission.READ_SETTINGS" android:writePermission="com.android.launcher.permission.WRITE_SETTINGS" android:exported="true" android:authorities="com.android.launcher2.settings"/>
+    <meta-data android:name="android.nfc.disable_beam_default" android:value="true"/>
+    <service android:label="NotificationMonitor" android:name="com.android.launcher2.aipluscard.notification.NotificationMonitorService" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+      <intent-filter>
+        <action android:name="android.service.notification.NotificationListenerService"/>
+      </intent-filter>
+      <intent-filter>
+        <action android:name="com.cusc.launcher.NotificationListenerService"/>
+      </intent-filter>
+    </service>
+  </application>
+</manifest>

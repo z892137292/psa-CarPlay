@@ -1,0 +1,162 @@
+[
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/mfi/MfiSelfCheck.kt",
+    "sha256": "5313befe6b787729f96c1e68c11fc9bfa77756484aaeede7637b4be2551e1c8f"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/mfi/RemoteMfiAuthenticationClient.kt",
+    "sha256": "ea3d3a560551644266e6c7489012a655bd5fc9d47ca2bafa68a853d07b3a1b92"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/mfi/LocalMfiProbe.kt",
+    "sha256": "294c34d96d3e1e06c0fd800f4506a54b8714c4188440e66d14cfc9a9e8149bfc"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/mfi/MfiDeviceScanner.kt",
+    "sha256": "f891d867748fe8c668b74d579de5d08552c3ffdf6dc71646ccd36a45aec6b530"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/mfi/LocalMfiAuthenticationClient.kt",
+    "sha256": "85da6d6c807f5eeb455707b7ddc17d26122700138a5f1a0120b758c8ebd2a9da"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/mfi/Iap2MfiAuthenticationClient.kt",
+    "sha256": "e0d73aa19f29f4935519bb448f89380d3b161c8e323ff0848874f821bf958a6a"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/mfi/MfiAuthenticationClient.kt",
+    "sha256": "d38cedb32804eec7798911be86e8fda753237a035fccba3db6cb0ee276e4fc1f"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/network/Ipv6NcmBridge.kt",
+    "sha256": "273d3f6f57de4b491bc61670ed709bf666d00c1a5adef53c4dd6316820f2a0e5"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/network/ManualHotspotManager.kt",
+    "sha256": "6a1204b21a1b8210777cbe0dfb7dae3dad23da4cd9763fce8bf9cb476e7f1fe5"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/transport/NcmUsbBridge.kt",
+    "sha256": "cd63fcb6d2dac14c6ef51fa054322abac157256bd61b40999e313334d0720151"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/transport/Ch341UsbHost.kt",
+    "sha256": "03794682ec228289a057fd69bcc55fc4bcbb54aa565de7471b45ce1dd3bd5898"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/transport/IphoneUsbHost.kt",
+    "sha256": "11c9c874304b7cc0999b63307296d488bad9acba4d955e78f104e43c727f272e"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/transport/BluetoothRfcommDuplexStream.kt",
+    "sha256": "d98d350914abf514eedb27070cf16c20d770e692f09dc05d0bf20d9254483045"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/transport/Iap2LinkEngine.kt",
+    "sha256": "c446cfc12a74c2759058f391d15d7d0509fe3c8e940708b13c247e8ea80ed70c"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/transport/Iap2WiredControlClient.kt",
+    "sha256": "d681080bef8c0736177bb2ea924ba8ab31e0c32b550b59b41c087369645fc008"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/transport/Iap2LinkChannel.kt",
+    "sha256": "76b5daddb740e03bb7428741dd3a9e38604f6b41a9f48d7701c3fd8fdfaaa778"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/transport/Iap2VehicleStatus.kt",
+    "sha256": "3abded8ec6021f2e141d36933aa17e79d5a705f9f76e41c6faff7efbfaf3a078"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/transport/Iap2UsbMuxHost.kt",
+    "sha256": "5eec57191c8450fb63420c6cba8b84c8e78d4e7efd7b666b7824f8ef239c92d0"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/transport/UsbMuxFrameBuffer.kt",
+    "sha256": "741793567cc150a30ab54034217ee4bcd09c5e7951364144935f4ff46af50eeb"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/transport/NcmFunctionDiscovery.kt",
+    "sha256": "85dcc1a6b7c9a01926e5689c596083ff83c20f99ca23791f63e43b88de0b264c"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/transport/Iap2CsmChannel.kt",
+    "sha256": "cc76705b7df01150dbccbd6c52b657bf6c6787977c042f1801a7f1b8f98bf01b"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/transport/Iap2LocationClient.kt",
+    "sha256": "0079d96c38568f221aa54bb8414dd020b753a14a4c022ed3294c1404412925aa"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/transport/Iap2IdentificationClient.kt",
+    "sha256": "d6176a778038c24f27a0f8bf8fe0f96c2191f1787ad53086ccc25e5202659f6a"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/transport/Iap2ControlDeadline.kt",
+    "sha256": "186bc35547bffc9d87f28611abbf80e8e0926ac35ceae35b2a21f66f077513a1"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/transport/Iap2WirelessControlClient.kt",
+    "sha256": "82acc8e2e02ff8edf2a4a02a9dd2fd5b6dc9d55e7240b79ce2e744b3705f4cd4"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/transport/Iap2FileTransferReceiver.kt",
+    "sha256": "0e49fecba4d64f7230ad5a492a3b1ed51cc30e79b15cd78fd865c0de8d1c8e82"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/airplay/CarPlayMediaEngine.kt",
+    "sha256": "d08cea017421be37372eeee07bf5b338e86eb748b363cf328e948b9d0289f002"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/airplay/MfiSapAuthSetup.kt",
+    "sha256": "d9d472f478e780f8f110cef4bd87dd969867a67b5d08d8a3d5552648801e7e9d"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/airplay/AirPlaySession.kt",
+    "sha256": "8f1bddb9ca8aea2498500f65d3c83dcba7e75cba9847433cfebe29f72fc5ca02"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/orchestration/MfiRuntime.kt",
+    "sha256": "4dc9fc672d1761d8d5768bc7a767a264cd3e9485940bcdc87b60d19f449ae614"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/iap2/session/Iap2Session.kt",
+    "sha256": "67cc7c8d5ae24f89be3d2a31f65d2cc6091c9d292135c02cc1ba29d2d03f4791"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/iap2/catalog/Iap2Endpoint.kt",
+    "sha256": "bc926b0d4e01d4a3d7b99d7900631a97538902f4aedc51f1295528edb5429420"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/iap2/body/Iap2BodyReader.kt",
+    "sha256": "2d292fb9d36ae5ed4bcc846cde59b85f7d7bcfe3da35c9f958ab6f022f8da146"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/iap2/body/Iap2BodyBuilder.kt",
+    "sha256": "1582474db22b718954050cf3e79cd10bf18647b831a6cfee79072efe8167755b"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/iap2/message/Iap2Messages.kt",
+    "sha256": "b784d8f4c0b10f0e92a2653ad6abd53a95e9193d7ae0918d4e8517686733037e"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/iap2/wire/Iap2WireCodec.kt",
+    "sha256": "860865941159f56bd11172682ee504f623f249a1b052ce8542ddf90a269703f5"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/iap2/wire/Iap2CsmFramer.kt",
+    "sha256": "1409b90cda3637d266fefdfd6f566d52143cdfbd88d5b447cf63bb6241afb7e5"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/iap2/wire/Iap2Wire.kt",
+    "sha256": "f6fb6707e0ba0a21bed9cd08cfdc1557745cf66a5acff0c03358af9a98690af6"
+  },
+  {
+    "path": "shared/src/main/java/com/shilapi/xcertplay/iap2/trace/Iap2FrameFormatter.kt",
+    "sha256": "f40be36ae5df9bc21c2cdb1136df1b14ef3f000d1d81570aa25ecb743e0c49bf"
+  },
+  {
+    "path": "common/src/main/java/com/shilapi/xcertplay/DiPlayBluetooth.kt",
+    "sha256": "4528006c3c5e83f5c94203db0e0326fe90d694a7dba51fb6d01b22a94026173b"
+  }
+]

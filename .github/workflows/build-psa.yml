@@ -1,7 +1,7 @@
-name: PSA 0.2.15 formal + Android 9 audio ROM compatibility
+name: PSA target ROM compatibility candidate
 on:
   push:
-    branches: [cleanup/psa-formal, fix/psa-audio-rom-api28-20261008]
+    branches: [test/psa-rom-api28-compat-20261008]
   workflow_dispatch:
 permissions:
   contents: write
@@ -47,7 +47,11 @@ jobs:
           assert 'trackAttributes = fallbackAttributes' in src, 'Audio fallback must retain the actual route attributes'
           print('PASS: Android 9 ROM AudioTrack attribute getter removed and safe fallback retained')
           PY
+          git -C upstream apply --check "$GITHUB_WORKSPACE/patches/psa-rom-compat.patch"
+          git -C upstream apply "$GITHUB_WORKSPACE/patches/psa-rom-compat.patch"
           mkdir -p out
+          python3 scripts/verify_psa_rom.py upstream | tee out/ROM-SOURCE-CHECK.txt
+          python3 scripts/test_psa_rom_guards.py upstream 2>&1 | tee out/ROM-GUARD-TESTS.txt
           python3 scripts/verify_formal_tree.py upstream | tee out/SOURCE-CHECK.txt
           python3 upstream/scripts/check_public_tree.py
           git -C upstream diff --stat > out/BASELINE-DELTA.txt
@@ -63,12 +67,12 @@ jobs:
         run: |
           cd upstream
           chmod +x gradlew
-          ./gradlew :shared:testDebugUnitTest :common:testDebugUnitTest :home:testDebugUnitTest :mobile:lintDebug :home:lintDebug :maphost:lintDebug :mobile:assembleDebug :home:assembleDebug :maphost:assembleDebug :mobile:assembleStandaloneDebug --stacktrace
+          ./gradlew :shared:testDebugUnitTest :common:testDebugUnitTest :home:testDebugUnitTest :mobile:lintDebug :home:lintDebug :maphost:lintDebug :mobile:assembleDebug :home:assembleDebug :maphost:assembleDebug :mobile:assembleStandaloneDebug --continue --stacktrace
       - name: Inspect APK and collect evidence
         run: |
           APK="$(find upstream/mobile/build/outputs/apk/debug -name '*.apk' -type f | head -n 1)"
           test -n "$APK"
-          cp "$APK" out/PSA-CarPlay-0.2.15-audio-rom-fix-candidate.apk
+          cp "$APK" out/PSA-CarPlay-0.2.15-rom-test1.apk
           AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -n 1)"
           "$AAPT" dump badging "$APK" > out/APK-INFO.txt
           grep -q "name='com.psa.carplay.dev'" out/APK-INFO.txt
@@ -79,13 +83,14 @@ jobs:
           SIGN="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
           "$SIGN" verify --verbose --print-certs "$APK" > out/APK-SIGNATURE.txt
           cp RELEASE-NOTES-0.2.15.md FORMAL-0.2.15-SOURCE.diff CLEANUP-0.2.15.md out/
+          cp docs/PSA_*.md patches/psa-rom-compat.patch out/
           cd out
           sha256sum *.apk > SHA256SUMS.txt
       - name: Upload APK and all test evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: PSA-CarPlay-0.2.15-audio-rom-fix-candidate
+          name: PSA-CarPlay-0.2.15-rom-test1
           path: |
             out/
             upstream/shared/build/test-results/
