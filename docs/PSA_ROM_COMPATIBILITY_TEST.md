@@ -41,3 +41,24 @@ AudioTrack.Builder/API23、bufferSizeInFrames/API23、routedDevice/API23、under
 ## 实机待验证清单
 
 API28/build fingerprint、真实 Launcher 冷热启动与返回、DPI/font_scale、H.264 连续播放、音频输出/导航混音、10次连接断开重连、无黑屏/重启/致命崩溃、外接无互联网 AP、STA+系统热点同时存在、Bluetooth交接。USB不修改，下一轮单独抓 VID/PID/重枚举/hasPermission/权限回调/SystemUI错误。
+
+## 最终自动化结果（2026-10-08 UTC）
+
+验证源码 commit：`71f8530446abaece0f18e6458249c05f5937ced5`。构建：[Actions 37718101226](https://github.com/z892137292/psa-CarPlay/actions/runs/37718101226)，结论 success，Gradle `BUILD SUCCESSFUL in 4m 40s`。
+
+| 检查 | 结果 |
+|---|---|
+| shared / common / home 单测（包括 JVM 与 Robolectric） | 384 / 170 / 4；合计 558，通过，0 失败，0 跳过 |
+| 静态防回归故障注入 | 3 项通过：任意变量名的 getter、P2P、自动 SoftAP 均被拒绝 |
+| 源码依赖/协议保护 | 主源码禁止实验调用、Manifest XML、公共源码安全检查、USB/Bluetooth/MFi/AirPlay/ManualHotspot SHA256 和 H.264/Surface/focus 前缀检查通过 |
+| mobile / home / maphost lintDebug | 通过，0 Error；分别 18 / 5 / 2 Warning（既有警告保留在 Artifact XML 中） |
+| APK 构建 | mobile debug/standaloneDebug、home debug、maphost debug 成功 |
+| APK 检查 | 安装包 DEX 的 PSA media 类没有 AudioTrack.getAudioAttributes 调用；ABI arm64-v8a/armeabi-v7a/x86/x86_64；com.psa.carplay.dev，versionCode 215，versionName 0.2.15-rom-test1-dev，minSdk 28，target/compile 37；认证资源存在，未声明 Wi-Fi Direct 功能 |
+| 签名 | apksigner 验证通过；Android Debug RSA2048，v2；不是生产签名 APK |
+| Android 模拟验证 | Robolectric API28/29/33，含真实 worker 与 ROM 缺失方法的 Shadow 故障注入；不是车机测试 |
+| 未执行 | adb/Android 设备 instrumentation、真实 Launcher 运行、物理 H.264/声音/USB/无线并发/重启和连续重连验收 |
+
+APK：`PSA-CarPlay-0.2.15-rom-test1.apk`，48196268 字节；SHA256 `02558452bba805791c22cd6b2e78c73da7c882fa9fe770e27701ba7350376c98`。
+签名证书 SHA256：`339796341dcaaeaca86809f5cf34dfe3046bb55273fc95966d5d7002e44eb5b9`。当前安装版本的证书未提供，不能声称可直接覆盖升级。
+
+[PR #12](https://github.com/z892137292/psa-CarPlay/pull/12) 基于 PR #11；Artifact ID 11525126114，名称 PSA-CarPlay-0.2.15-rom-test1，包含 APK、全部测试 XML、lint、包信息、签名、SHA256 和补丁。该轮通过不改变“测试候选”状态。最终报告补提交只更新文档，APK 对应上述已验证代码 commit。
