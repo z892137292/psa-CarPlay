@@ -64,3 +64,6 @@ APK：`PSA-CarPlay-0.2.15-rom-test1.apk`，48196268 字节；SHA256 `02558452bba
 签名证书 SHA256：`339796341dcaaeaca86809f5cf34dfe3046bb55273fc95966d5d7002e44eb5b9`。当前安装版本的证书未提供，不能声称可直接覆盖升级。
 
 [PR #12](https://github.com/z892137292/psa-CarPlay/pull/12) 基于 PR #11；Artifact ID 11525126114，名称 PSA-CarPlay-0.2.15-rom-test1，包含 APK、全部测试 XML、lint、包信息、签名、SHA256 和补丁。该轮通过不改变“测试候选”状态。最终报告补提交只更新文档，APK 对应上述已验证代码 commit。
+
+## 当前 PR #13
+最新代码与 Actions 实际结果见 [PSA_FIRST_FRAME_RELEASE_GATE.md](PSA_FIRST_FRAME_RELEASE_GATE.md)。上文 PR #12 的 APK、SHA256、证书和测试计数是历史记录，不能用作新 PR #13 APK 的身份信息。
