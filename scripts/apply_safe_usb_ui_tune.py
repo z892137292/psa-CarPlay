@@ -124,6 +124,21 @@ source = replace_once(
 
 source = replace_once(
     source,
+    '''        content.addView(header)
+        content.addView(space(24))''',
+    '''        if (page == "home" && PsaHomeLayout.compact(resources.configuration.screenWidthDp, resources.configuration.screenHeightDp)) {
+            header.addView(button("设置", false) {
+                page = "settings"
+                render()
+            }, LinearLayout.LayoutParams(dp(130), dp(56)).apply { leftMargin = dp(12) })
+        }
+        content.addView(header)
+        content.addView(space(24))''',
+    "home settings access in header",
+)
+
+source = replace_once(
+    source,
     '''            card.addView(button(getString(R.string.choose_save_location), false) { chooseReportDestination() }, matchButton(10, 60))''',
     '''            card.addView(button(getString(R.string.choose_save_location), false) { chooseReportDestination() }, matchButton(10, 60))
             card.addView(button("连接诊断 / USB", false) {
@@ -143,7 +158,7 @@ wide = wide_test.read_text(encoding="utf-8")
 wide = replace_once(
     wide,
     'listOf(activity.getString(com.shilapi.xcertplay.host.R.string.connect_phone), "蓝牙设备列表", "Wi-Fi 设置", "系统热点设置", "连接配置", "连接诊断 / USB")',
-    'listOf("连接手机", "USB 有线", "无线 CarPlay", "车机热点 / 同一网络配置", "添加 / 切换手机", "已配对手机")',
+    'listOf("连接手机", "USB 有线", "无线 CarPlay", "车机热点 / 同一网络配置", "添加 / 切换手机", "已配对手机", "设置")',
     "1920x720 home regression labels",
 )
 wide = replace_once(
