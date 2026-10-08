@@ -64,12 +64,22 @@ new_home = '''    // Touch-friendly PSA 1920x720 home: connection, transport, pa
 
         val modes = card()
         modes.addView(label("连接方式", 26, TEXT, true))
-        modes.addView(button("USB 有线", false) { connect(false) }, matchButton(18, 72))
-        modes.addView(button("无线 CarPlay", false) { connect(true) }, matchButton(12, 72))
-        modes.addView(button("车机热点 / 同一网络配置", false) {
-            page = "connection"
+        modes.addView(button("USB 有线", !AirPlayPersistence.loadWirelessEnabled(this)) {
+            AirPlayPersistence.saveWirelessEnabled(this, false)
             render()
-        }, matchButton(12, 60))
+        }, matchButton(18, 72))
+        modes.addView(button("同一网络 LAN", AirPlayPersistence.loadWirelessEnabled(this) &&
+            AirPlayPersistence.loadWirelessHotspotMode(this) == WirelessHotspotMode.EXISTING_WIFI) {
+            AirPlayPersistence.saveWirelessEnabled(this, true)
+            AirPlayPersistence.saveWirelessHotspotMode(this, WirelessHotspotMode.EXISTING_WIFI)
+            render()
+        }, matchButton(12, 72))
+        modes.addView(button("车机系统热点", AirPlayPersistence.loadWirelessEnabled(this) &&
+            AirPlayPersistence.loadWirelessHotspotMode(this) == WirelessHotspotMode.SYSTEM_HOTSPOT) {
+            AirPlayPersistence.saveWirelessEnabled(this, true)
+            AirPlayPersistence.saveWirelessHotspotMode(this, WirelessHotspotMode.SYSTEM_HOTSPOT)
+            render()
+        }, matchButton(12, 72))
         modes.addView(label("无线模式使用设置中保存的网络配置", 16, MUTED).apply {
             setPadding(0, dp(16), 0, 0)
         })
@@ -158,18 +168,8 @@ wide = wide_test.read_text(encoding="utf-8")
 wide = replace_once(
     wide,
     'listOf(activity.getString(com.shilapi.xcertplay.host.R.string.connect_phone), "蓝牙设备列表", "Wi-Fi 设置", "系统热点设置", "连接配置", "连接诊断 / USB")',
-    'listOf("连接手机", "USB 有线", "无线 CarPlay", "车机热点 / 同一网络配置", "添加 / 切换手机", "已配对手机", "设置")',
+    'listOf(activity.getString(com.shilapi.xcertplay.host.R.string.connect_phone), "USB 有线", "同一网络 LAN", "车机系统热点", "添加 / 切换手机", "已配对手机", "设置")',
     "1920x720 home regression labels",
-)
-wide = replace_once(
-    wide,
-    '''            assertTrue(title, control.getGlobalVisibleRect(rect))
-            assertTrue("$title clipped: $rect", rect.width() >= control.width && rect.height() >= control.height)''',
-    '''            if (activity.resources.configuration.screenHeightDp >= 600) {
-                assertTrue(title, control.getGlobalVisibleRect(rect))
-                assertTrue("$title clipped: $rect", rect.width() >= control.width && rect.height() >= control.height)
-            }''',
-    "allow scroll at 240/320dpi with very low available dp height",
 )
 wide_test.write_text(wide, encoding="utf-8")
 ui.write_text(source, encoding="utf-8")

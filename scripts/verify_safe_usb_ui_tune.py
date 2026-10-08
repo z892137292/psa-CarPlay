@@ -16,9 +16,15 @@ assert "android.hardware.usb.action.USB_DEVICE_ATTACHED" in host
 assert 'homeDesignScale = 1f' in src
 assert "(config.screenHeightDp / 720f).coerceAtMost(1f)" not in src
 assert 'connectionModeControls(modes)' not in src
-for label in ("已配对手机","暂无已配对设备","USB 有线","无线 CarPlay",
-              "车机热点 / 同一网络配置","添加 / 切换手机","连接诊断 / USB"):
+for label in ("已配对手机","暂无已配对设备","USB 有线","同一网络 LAN",
+              "车机系统热点","添加 / 切换手机","连接诊断 / USB"):
     assert label in src, f"missing new UI action: {label}"
 assert 'bondedDevices' in src and 'DiPlayPreferences.savePhone' in src
 assert 'CarPlayBackgroundSession.stop' in src and 'connect(false)' in src
 print("PASS: existing USB permission path preserved, observed Apple filter added, no double UI scaling, real paired phones")
+
+assert "mainFirstFrameReady && SCREEN_TYPE_MAIN in activeScreenStreamTypes" in host
+assert "FIRST_FRAME_WAIT_MILLIS = 90_000L" in host
+assert "firstFrameWaitSuspended" in host and "psa_first_frame_timeout" in src
+assert "currentSurfaceTexture !== texture" in host
+print("PASS: first-frame gate, recoverable deadline and stale Surface protection retained")

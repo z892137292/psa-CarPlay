@@ -1,0 +1,437 @@
+diff --git a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt b/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
+index 49881fe..778c5e9 100644
+--- a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
++++ b/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
+@@ -337,6 +337,8 @@ class CarPlayHostActivity : ComponentActivity() {
+     private var startAfterHandshakeReset = false
+     private var restartGeneration = 0
+     private var mainFirstFrameReady = false
++    private var firstFrameTimeout: Runnable? = null
++    private var firstFrameWaitSuspended = false
+     private var reconnectScheduled = false
+     private var sessionLog: SessionLogFile? = null
+     private var psaDiagnostics: PsaDisconnectDiagnostics? = null
+@@ -384,11 +386,13 @@ class CarPlayHostActivity : ComponentActivity() {
+             }
+             appendLog(if (existing === surface) "Texture surface reused" else "Texture surface created")
+             attachSurface(surface)
++            armFirstFrameWait()
+             updateVideoLayout(width, height)
+             scheduleDisplaySize(width, height)
+         }
+ 
+         override fun onSurfaceTextureSizeChanged(texture: SurfaceTexture, width: Int, height: Int) {
++            if (currentSurfaceTexture !== texture) return
+             updateVideoLayout(width, height)
+             scheduleDisplaySize(width, height)
+         }
+@@ -402,9 +406,11 @@ class CarPlayHostActivity : ComponentActivity() {
+             }
+             currentSurface = null
+             currentSurfaceTexture = null
++            cancelFirstFrameWait()
+             mainFirstFrameReady = false
+             updateDebugOverlays()
+             appendLog("Texture surface destroyed")
++            armFirstFrameWait()
+             return true
+         }
+ 
+@@ -603,7 +609,7 @@ class CarPlayHostActivity : ComponentActivity() {
+     override fun onNewIntent(intent: Intent) {
+         super.onNewIntent(intent)
+         setIntent(intent)
+-        if (intent.action == "android.hardware.usb.action.USB_DEVICE_ATTACHED" && wirelessEnabled) {
++        if (intent.action == "android.hardware.usb.action.USB_DEVICE_ATTACHED" && wirelessEnabled && !shuttingDown.get()) {
+             shutdown(false, "switching to USB") {
+                 AirPlayPersistence.saveWirelessEnabled(this, false)
+                 startActivity(Intent(this, CarPlayHostActivity::class.java))
+@@ -623,6 +629,7 @@ class CarPlayHostActivity : ComponentActivity() {
+ 
+     override fun onResume() {
+         super.onResume()
++        firstFrameWaitSuspended = false
+         psaDiagnostics?.lifecycle("resume")
+         val languagePreference = AppLocale.preference(this)
+         if (Build.VERSION.SDK_INT < 33 && languagePreference != languagePreferenceAtCreate) {
+@@ -646,9 +653,17 @@ class CarPlayHostActivity : ComponentActivity() {
+         }
+         ensureClusterPresentation()
+         maybeStartCarPlay()
++        updateDebugOverlays()
++        armFirstFrameWait()
+         applyFullscreenMode()
+     }
+ 
++    override fun onPause() {
++        firstFrameWaitSuspended = true
++        cancelFirstFrameWait() // HOME/settings must not time out a background retained session.
++        super.onPause()
++    }
++
+     // Experimental: the CarPlay instrument-cluster stream on the BYD cluster projection display.
+     private fun effectiveClusterTheme(): DiLink51ClusterLayout.Theme =
+         if (DiLink51ClusterLayout.automatic(this)) detectedCluster.theme ?: DiLink51ClusterLayout.theme(this)
+@@ -866,6 +881,8 @@ class CarPlayHostActivity : ComponentActivity() {
+     }
+ 
+     override fun onDestroy() {
++        firstFrameWaitSuspended = true
++        cancelFirstFrameWait()
+         clusterMonitor?.stop()
+         mainHandler.removeCallbacks(hideIdleCenterMap)
+         homeMonitor?.stop()
+@@ -3059,6 +3076,7 @@ class CarPlayHostActivity : ComponentActivity() {
+             },
+         )
+         updateDebugOverlays()
++        armFirstFrameWait()
+         return true
+     }
+ 
+@@ -3153,6 +3171,7 @@ class CarPlayHostActivity : ComponentActivity() {
+ 
+             startForegroundService(Intent(this, DiPlaySessionService::class.java))
+             next.start()
++            armFirstFrameWait()
+         } catch (error: RuntimeException) {
+             appendLog("Connection could not start: ${error.javaClass.simpleName}")
+             shutdown(false, "foreground service could not start")
+@@ -3300,6 +3319,7 @@ class CarPlayHostActivity : ComponentActivity() {
+     }
+ 
+     private fun returnHomeAfterConfirmedLoss(reason: String, eventNanos: Long) {
++        cancelFirstFrameWait()
+         activeAirPlaySession = null
+         activeScreenStreamTypes.clear()
+         mainFirstFrameReady = false
+@@ -3313,7 +3333,8 @@ class CarPlayHostActivity : ComponentActivity() {
+         }
+         shutdown(false, reason)
+         startActivity(Intent(this, DiPlayActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+-            .putExtra("page", "home").putExtra("psa_loss_event_nanos", eventNanos))
++            .putExtra("page", "home").putExtra("psa_loss_event_nanos", eventNanos)
++            .putExtra("psa_first_frame_timeout", reason == "FIRST_FRAME_TIMEOUT"))
+         finish()
+         appendFileLog("CONNECTION_STATE state=WAITING_RECONNECT homeRequestedMs=${(System.nanoTime() - eventNanos) / 1_000_000}")
+     }
+@@ -3370,6 +3391,7 @@ class CarPlayHostActivity : ComponentActivity() {
+         mainFirstFrameReady = false
+         setConnectionStage(reason)
+         Log.i(TAG, "$reason; rebuilding stack at ${size.width}x${size.height}")
++        cancelFirstFrameWait()
+         val generation = ++restartGeneration
+         handshakeResetInProgress = true
+         val oldController = controller
+@@ -3469,6 +3491,7 @@ class CarPlayHostActivity : ComponentActivity() {
+ 
+     private fun shutdown(terminateProcess: Boolean, reason: String, completion: () -> Unit = {}) {
+         if (!shuttingDown.compareAndSet(false, true)) { completion(); return }
++        cancelFirstFrameWait()
+         restartGeneration += 1
+         mainHandler.removeCallbacks(applyDisplaySize)
+         val oldController = controller
+@@ -3597,9 +3620,32 @@ class CarPlayHostActivity : ComponentActivity() {
+         return total / event.pointerCount
+     }
+ 
++    /** UI deadline only: leave every USB/iAP2/MFi/network timeout intact. No automatic retry. */
++    private fun armFirstFrameWait() {
++        if (controller == null || mainFirstFrameReady || shuttingDown.get() || menuOpen || firstFrameWaitSuspended || firstFrameTimeout != null) return
++        val generation = restartGeneration
++        firstFrameTimeout = Runnable { onFirstFrameTimeout(generation) }.also {
++            mainHandler.postDelayed(it, FIRST_FRAME_WAIT_MILLIS)
++        }
++    }
++
++    private fun cancelFirstFrameWait() {
++        firstFrameTimeout?.let(mainHandler::removeCallbacks)
++        firstFrameTimeout = null
++    }
++
++    private fun onFirstFrameTimeout(generation: Int) {
++        if (generation != restartGeneration || shuttingDown.get() || firstFrameWaitSuspended || mainFirstFrameReady || controller == null) return
++        cancelFirstFrameWait()
++        appendFileLog("FIRST_FRAME_TIMEOUT generation=$generation waitMs=$FIRST_FRAME_WAIT_MILLIS action=return_home retry=manual")
++        PsaConnectionState.set("视频", "FIRST_FRAME_TIMEOUT：未显示首帧")
++        returnHomeAfterConfirmedLoss("FIRST_FRAME_TIMEOUT", System.nanoTime())
++    }
++
+     private fun onFirstFrameRendered(generation: Int, type: Int) {
+         runOnUiThread {
+-            if (shuttingDown.get() || generation != restartGeneration || type != SCREEN_TYPE_MAIN || mainFirstFrameReady) return@runOnUiThread
++            if (shuttingDown.get() || generation != restartGeneration || type != SCREEN_TYPE_MAIN || mainFirstFrameReady || SCREEN_TYPE_MAIN !in activeScreenStreamTypes) return@runOnUiThread
++            cancelFirstFrameWait()
+             mainFirstFrameReady = true
+             PsaConnectionState.set("视频", "FIRST_FRAME：已输出首帧")
+             appendLog("FIRST_FRAME generation=$generation type=$type")
+@@ -3632,6 +3678,7 @@ class CarPlayHostActivity : ComponentActivity() {
+                 }
+             }
+             updateDebugOverlays()
++            if (type == SCREEN_TYPE_MAIN && !mainFirstFrameReady) armFirstFrameWait()
+         }
+     }
+ 
+@@ -3768,6 +3815,7 @@ class CarPlayHostActivity : ComponentActivity() {
+ 
+     private companion object {
+         const val TAG = "xcertplay-usb"
++        const val FIRST_FRAME_WAIT_MILLIS = 90_000L
+         const val SCREEN_TYPE_MAIN = 110
+         const val SCREEN_TYPE_ALT = 111
+         private const val CENTER_MAP_IDLE_MILLIS = 3_000L // a reconnect is quicker; a session end is not
+diff --git a/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt b/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
+index e21515e..1d5ceec 100644
+--- a/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
++++ b/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
+@@ -59,6 +59,7 @@ class DiPlayActivity : ComponentActivity() {
+     private var initialLaunch = true
+     private var notificationTransport = true
+     private var exportInProgress = false
++    private var lastConnectionFailure: String? = null
+     private var navigationStreamType = 14
+     private var testToneTrack: AudioTrack? = null
+     private var toneStop: Runnable? = null
+@@ -107,6 +108,7 @@ class DiPlayActivity : ComponentActivity() {
+             getString(R.string.setup_error_auth)
+         }
+         page = savedInstanceState?.getString("page") ?: intent.getStringExtra("page") ?: "home"
++        consumeConnectionFailure()
+         render()
+         handleWirelessRecovery()
+         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+@@ -119,6 +121,7 @@ class DiPlayActivity : ComponentActivity() {
+ 
+     override fun onNewIntent(intent: Intent) {
+         super.onNewIntent(intent); setIntent(intent)
++        consumeConnectionFailure()
+         page = intent.getStringExtra("page") ?: "home"; render()
+         handleWirelessRecovery()
+     }
+@@ -954,6 +957,7 @@ class DiPlayActivity : ComponentActivity() {
+ 
+     private var hotspotManualApproved = false
+     private fun connect(wireless: Boolean) {
++        lastConnectionFailure = null
+         if(wireless && AirPlayPersistence.loadWirelessHotspotMode(this) == WirelessHotspotMode.SYSTEM_HOTSPOT &&
+             !hotspotManualApproved && getSharedPreferences("psa_hotspot",0).getString("ssid","").orEmpty().isNotBlank()) {
+             AlertDialog.Builder(this).setTitle("确认本次热点手动补充")
+@@ -1034,10 +1038,18 @@ class DiPlayActivity : ComponentActivity() {
+ 
+ 
+ 
++    private fun consumeConnectionFailure() {
++        if (intent.getBooleanExtra("psa_first_frame_timeout", false)) {
++            intent.removeExtra("psa_first_frame_timeout")
++            lastConnectionFailure = getString(R.string.psa_first_frame_timeout)
++        }
++    }
++
+     private fun refreshStatus() {
+         val running = CarPlayBackgroundSession.hasSession()
+         status?.text = when {
+             CarPlayBackgroundSession.startBlocked() -> "等待重连 · 正在清理旧会话"
++            lastConnectionFailure != null -> lastConnectionFailure!!
+             com.shilapi.xcertplay.orchestration.PsaConnectionState.current() == "等待重连" -> "等待连接"
+             setupError != null -> getString(R.string.setup_needs_attention)
+             CarPlayBackgroundSession.active -> getString(R.string.carplay_connected)
+diff --git a/common/src/main/res/values-ar/strings.xml b/common/src/main/res/values-ar/strings.xml
+index c5bd269..b277e92 100644
+--- a/common/src/main/res/values-ar/strings.xml
++++ b/common/src/main/res/values-ar/strings.xml
+@@ -466,4 +466,5 @@
+     <string name="launcher_map_sharing">مشاركة الخريطة المباشرة مع المشغّلات الأخرى</string>
+     <string name="launcher_map_sharing_description">يمكن للمشغّلات التي تدعم DiPlay عرض خريطة لوحة العدادات المباشرة داخل شاشتها الرئيسية. معطّل افتراضيًا، لأن أي تطبيق على وحدة القيادة يمكنه عندها طلب الخريطة. راجع docs/LAUNCHER_INTEGRATION.md.</string>
+     <string name="settings_android9_compat">الإعدادات التالية غير متاحة ومخفية على Android 9 (API 28):\n• مفكّك HEVC البرمجي — يُستخدم فك الترميز العتادي بدلاً منه.</string>
++    <string name="psa_first_frame_timeout">انتهت مهلة انتظار أول إطار فيديو. ارجع إلى الصفحة الرئيسية وأعد الاتصال.</string>
+ </resources>
+diff --git a/common/src/main/res/values-es/strings.xml b/common/src/main/res/values-es/strings.xml
+index 071a121..088707f 100644
+--- a/common/src/main/res/values-es/strings.xml
++++ b/common/src/main/res/values-es/strings.xml
+@@ -466,4 +466,5 @@
+     <string name="launcher_map_sharing">Compartir el mapa en vivo con otros launchers</string>
+     <string name="launcher_map_sharing_description">Los launchers compatibles con DiPlay pueden mostrar el mapa en vivo del panel de instrumentos en su propia pantalla de inicio. Desactivado por defecto, porque entonces cualquier aplicación de la unidad principal podría pedir el mapa. Consulta docs/LAUNCHER_INTEGRATION.md.</string>
+     <string name="settings_android9_compat">Los siguientes ajustes no están disponibles y están ocultos en Android 9 (API 28):\n• Decodificador por software HEVC — se usa la decodificación por hardware en su lugar.</string>
++    <string name="psa_first_frame_timeout">No llegó el primer fotograma de vídeo. Vuelve al inicio y reconecta.</string>
+ </resources>
+diff --git a/common/src/main/res/values-ru/strings.xml b/common/src/main/res/values-ru/strings.xml
+index a541c7d..572d859 100644
+--- a/common/src/main/res/values-ru/strings.xml
++++ b/common/src/main/res/values-ru/strings.xml
+@@ -466,4 +466,5 @@
+     <string name="launcher_map_sharing">Делиться живой картой с другими лаунчерами</string>
+     <string name="launcher_map_sharing_description">Лаунчеры с поддержкой DiPlay смогут показывать живую карту приборной панели на своём главном экране. Выключено по умолчанию, потому что тогда карту сможет запросить любое приложение на головном устройстве. Подробнее: docs/LAUNCHER_INTEGRATION.md.</string>
+     <string name="settings_android9_compat">Следующие настройки недоступны и скрыты на Android 9 (API 28):\n• Программный декодер HEVC — вместо него используется аппаратное декодирование.</string>
++    <string name="psa_first_frame_timeout">Время ожидания первого кадра истекло. Вернитесь на главную и подключитесь снова.</string>
+ </resources>
+diff --git a/common/src/main/res/values-uk/strings.xml b/common/src/main/res/values-uk/strings.xml
+index e669ffb..8613f64 100644
+--- a/common/src/main/res/values-uk/strings.xml
++++ b/common/src/main/res/values-uk/strings.xml
+@@ -477,4 +477,5 @@
+     <string name="widget_no_route">Немає маршруту</string>
+     <string name="widget_not_connected">CarPlay не підключено</string>
+     <string name="settings_android9_compat">Наведені нижче налаштування недоступні та приховані в Android 9 (API 28):\n• Програмний декодер HEVC — натомість використовується апаратне декодування.</string>
++    <string name="psa_first_frame_timeout">Час очікування першого кадру минув. Поверніться на головну та підключіться знову.</string>
+ </resources>
+diff --git a/common/src/main/res/values-zh-rCN/strings.xml b/common/src/main/res/values-zh-rCN/strings.xml
+index e75ae66..4fd8455 100644
+--- a/common/src/main/res/values-zh-rCN/strings.xml
++++ b/common/src/main/res/values-zh-rCN/strings.xml
+@@ -476,4 +476,5 @@
+     <string name="launcher_map_sharing">与其他启动器共享实时地图</string>
+     <string name="launcher_map_sharing_description">支持 DiPlay 的启动器可以在自己的主屏幕中显示实时仪表盘地图。默认关闭，因为开启后车机上的任何应用都可以请求该地图。详见 docs/LAUNCHER_INTEGRATION.md。</string>
+     <string name="settings_android9_compat">Android 9：HEVC软解码不可用，使用硬件解码。</string>
++    <string name="psa_first_frame_timeout">等待视频首帧超时，请返回主页后重新连接。</string>
+ </resources>
+diff --git a/common/src/main/res/values/strings.xml b/common/src/main/res/values/strings.xml
+index af12f2a..2354a99 100644
+--- a/common/src/main/res/values/strings.xml
++++ b/common/src/main/res/values/strings.xml
+@@ -476,4 +476,5 @@
+     <string name="launcher_map_sharing">Share the live map with other launchers</string>
+     <string name="launcher_map_sharing_description">Launchers that support DiPlay can show the live dashboard map inside their own home screen. Off by default, because any app on the head unit could then ask for the map. See docs/LAUNCHER_INTEGRATION.md.</string>
+     <string name="settings_android9_compat">Android 9: HEVC software decoding is unavailable; hardware decoding is used.</string>
++    <string name="psa_first_frame_timeout">No video first frame arrived. Return home and reconnect.</string>
+ </resources>
+diff --git a/common/src/test/java/com/shilapi/xcertplay/PsaFirstFrameReleaseGateTest.kt b/common/src/test/java/com/shilapi/xcertplay/PsaFirstFrameReleaseGateTest.kt
+new file mode 100644
+index 0000000..ebe2267
+--- /dev/null
++++ b/common/src/test/java/com/shilapi/xcertplay/PsaFirstFrameReleaseGateTest.kt
+@@ -0,0 +1,103 @@
++package com.shilapi.xcertplay
++
++import android.content.Intent
++import android.view.View
++import android.widget.TextView
++import com.shilapi.xcertplay.orchestration.CarPlayController
++import java.time.Duration
++import java.util.concurrent.ExecutorService
++import java.util.concurrent.atomic.AtomicBoolean
++import org.junit.Assert.*
++import org.junit.Test
++import org.junit.runner.RunWith
++import org.mockito.Mockito.*
++import org.robolectric.Robolectric
++import org.robolectric.RobolectricTestRunner
++import org.robolectric.Shadows.shadowOf
++import org.robolectric.annotation.Config
++import org.robolectric.annotation.LooperMode
++
++@RunWith(RobolectricTestRunner::class)
++@Config(sdk = [28])
++@LooperMode(LooperMode.Mode.PAUSED)
++class PsaFirstFrameReleaseGateTest {
++    private fun field(a: CarPlayHostActivity, name: String) = a.javaClass.getDeclaredField(name).apply { isAccessible = true }
++    private fun call(a: CarPlayHostActivity, name: String, vararg args: Any) {
++        val types = args.map { when(it) { is Int -> Int::class.javaPrimitiveType!!; else -> it.javaClass } }.toTypedArray()
++        a.javaClass.getDeclaredMethod(name, *types).apply { isAccessible = true }.invoke(a, *args)
++    }
++    private fun withHost(test: (CarPlayHostActivity, CarPlayController) -> Unit) {
++        val a = Robolectric.buildActivity(CarPlayHostActivity::class.java).get()
++        val controller = mock(CarPlayController::class.java)
++        `when`(controller.awaitClosed(anyLong())).thenReturn(true)
++        call(a, "buildContentView")
++        field(a,"controller").set(a,controller)
++        try { test(a,controller) } finally {
++            call(a,"cancelFirstFrameWait")
++            (field(a,"shuttingDown").get(a) as AtomicBoolean).set(true)
++            for(name in listOf("teardownExecutor","airPlayCommandExecutor"))
++                (field(a,name).get(a) as ExecutorService).shutdownNow()
++            CarPlayBackgroundSession.closed(controller); CarPlayBackgroundSession.clear()
++        }
++    }
++    @Test fun controllerAndHandshakeStatusesNeverRevealBlackVideo() = withHost { a,_ ->
++        for(status in listOf("Controller started","Network connected","AirPlay SETUP","Video decoder initialized")) {
++            call(a,"setConnectionStage",status)
++            assertEquals(View.VISIBLE,(field(a,"connectionPanel").get(a) as View).visibility)
++        }
++        call(a,"onFirstFrameRendered",0,110) // A callback without the main stream is insufficient.
++        assertFalse(field(a,"mainFirstFrameReady").getBoolean(a))
++    }
++    @Test fun noVideoDeadlineReturnsHomeAndKeepsFailureDistinctFromSuccess() = withHost { a,_ ->
++        call(a,"armFirstFrameWait")
++        shadowOf(android.os.Looper.getMainLooper()).idleFor(Duration.ofSeconds(89))
++        assertFalse(a.isFinishing)
++        assertEquals(View.VISIBLE,(field(a,"connectionPanel").get(a) as View).visibility)
++        shadowOf(android.os.Looper.getMainLooper()).idleFor(Duration.ofSeconds(1))
++        val intent=shadowOf(a).nextStartedActivity
++        assertEquals(DiPlayActivity::class.java.name,intent.component!!.className)
++        assertTrue(intent.getBooleanExtra("psa_first_frame_timeout",false))
++        assertTrue(a.isFinishing)
++    }
++    @Test fun staleDeadlineAndPostFirstFrameDeadlineCannotTerminateSession() = withHost { a,_ ->
++        call(a,"armFirstFrameWait")
++        call(a,"onFirstFrameTimeout",-1)
++        @Suppress("UNCHECKED_CAST")
++        (field(a,"activeScreenStreamTypes").get(a) as MutableSet<Int>).add(110)
++        call(a,"onFirstFrameRendered",0,110)
++        shadowOf(android.os.Looper.getMainLooper()).idleFor(Duration.ofSeconds(100))
++        assertFalse(a.isFinishing); assertNull(shadowOf(a).nextStartedActivity)
++        assertEquals(View.GONE,(field(a,"connectionPanel").get(a) as View).visibility)
++    }
++    @Test fun pausedSessionCannotArmOrExecuteADisplayTimeout() = withHost { a,_ ->
++        field(a,"firstFrameWaitSuspended").setBoolean(a,true)
++        call(a,"armFirstFrameWait")
++        call(a,"onFirstFrameTimeout",0)
++        assertNull(field(a,"firstFrameTimeout").get(a))
++        assertFalse(a.isFinishing)
++    }
++    @Test fun duplicateUsbAttachReusesWiredOwnerWithoutAnotherController() = withHost { a,c ->
++        field(a,"wirelessEnabled").setBoolean(a,false)
++        val intent=Intent("android.hardware.usb.action.USB_DEVICE_ATTACHED")
++        repeat(5) { call(a,"onNewIntent",intent) }
++        assertSame(c,field(a,"controller").get(a))
++        verify(c,never()).start(); verify(c,never()).close()
++        assertNull(shadowOf(a).nextStartedActivity)
++    }
++    @Test fun staleSurfaceSizeCallbackCannotRenegotiateCurrentDisplay() = withHost { a,_ ->
++        val stale=mock(android.graphics.SurfaceTexture::class.java)
++        val current=mock(android.graphics.SurfaceTexture::class.java)
++        field(a,"currentSurfaceTexture").set(a,current)
++        val listener=field(a,"textureListener").get(a) as android.view.TextureView.SurfaceTextureListener
++        listener.onSurfaceTextureSizeChanged(stale,1,1)
++        assertNull(field(a,"pendingDisplaySize").get(a))
++    }
++    @Test fun homeShowsRecoverableFailureAcrossStatusRefreshes() {
++        val a=Robolectric.buildActivity(DiPlayActivity::class.java).get()
++        a.intent=Intent().putExtra("psa_first_frame_timeout",true)
++        for(name in listOf("consumeConnectionFailure","render","refreshStatus","refreshStatus"))
++            a.javaClass.getDeclaredMethod(name).apply { isAccessible=true }.invoke(a)
++        val status=a.javaClass.getDeclaredField("status").apply { isAccessible=true }.get(a) as TextView
++        assertEquals(a.getString(com.shilapi.xcertplay.host.R.string.psa_first_frame_timeout),status.text.toString())
++    }
++}
+diff --git a/common/src/test/java/com/shilapi/xcertplay/PsaWideHomeTest.kt b/common/src/test/java/com/shilapi/xcertplay/PsaWideHomeTest.kt
+index 3bc83c2..1bf82b8 100644
+--- a/common/src/test/java/com/shilapi/xcertplay/PsaWideHomeTest.kt
++++ b/common/src/test/java/com/shilapi/xcertplay/PsaWideHomeTest.kt
+@@ -30,6 +30,12 @@ class PsaWideHomeTest {
+             val control = controls.singleOrNull { it.text.toString() == title }
+             assertNotNull("Missing $title; visible labels=${controls.map { it.text }}", control)
+             control!!
++            // At non-target density retain normal dp touch sizes; verify reachability by scrolling.
++            val scroll = all.filterIsInstance<android.widget.ScrollView>().single()
++            if (activity.resources.configuration.screenHeightDp < 600) {
++                val position = IntArray(2); control.getLocationOnScreen(position)
++                scroll.scrollTo(0, (position[1] + scroll.scrollY - scroll.height / 2).coerceAtLeast(0))
++            } else scroll.scrollTo(0, 0)
+             val rect = android.graphics.Rect()
+             assertTrue("$title not visible; control=${control.width}x${control.height} root=${root.width}x${root.height}", control.getGlobalVisibleRect(rect))
+             assertTrue("$title clipped: $rect", rect.width() >= control.width && rect.height() >= control.height)
+diff --git a/mobile/build.gradle.kts b/mobile/build.gradle.kts
+index 30c58c4..54cd9da 100644
+--- a/mobile/build.gradle.kts
++++ b/mobile/build.gradle.kts
+@@ -18,7 +18,7 @@ android {
+         minSdk = 28
+         targetSdk = 37
+         versionCode = 215
+-        versionName = "0.2.15-rom-test1"
++        versionName = "0.2.15-pr13-test1"
+ 
+     }
+ 
