@@ -19,18 +19,29 @@ index 76238d6..49881fe 100644
  
      private fun formattedLogLine(message: String, nowMillis: Long): String =
 diff --git a/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt b/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
-index 4b469a4..1d35daf 100644
+index 4b469a4..bd1373c 100644
 --- a/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
 +++ b/common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt
-@@ -147,7 +147,7 @@ class DiPlayActivity : ComponentActivity() {
+@@ -147,7 +147,8 @@ class DiPlayActivity : ComponentActivity() {
              intent.removeExtra("psa_loss_event_nanos")
              window.decorView.post {
                  val elapsed = (System.nanoTime() - lossEvent) / 1_000_000
 -                SessionLogFile(java.io.File(filesDir, "disconnect.log")).use { it.append("CONNECTION_STATE state=WAITING_RECONNECT homeResumedMs=$elapsed") }
-+                SessionLogFile(java.io.File(filesDir, "logs/disconnect.log")).use { it.append("CONNECTION_STATE state=WAITING_RECONNECT homeResumedMs=$elapsed") }
++                AsyncDiagnosticLog.append(SessionLogFile(java.io.File(filesDir, "logs/disconnect.log")),
++                    "CONNECTION_STATE state=WAITING_RECONNECT homeResumedMs=$elapsed")
                  android.util.Log.i("PSA", "CONNECTION_STATE state=WAITING_RECONNECT homeResumedMs=$elapsed")
              }
          }
+@@ -553,9 +554,6 @@ class DiPlayActivity : ComponentActivity() {
+ 
+     private fun openCarClientWifiSettings() {
+         val wifi = Intent(Settings.ACTION_WIFI_SETTINGS)
+-        if (packageManager.resolveActivity(wifi, 0)?.activityInfo?.packageName == "com.byd.carsettings") {
+-            runCatching { startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)) }
+-        }
+         openSystem(wifi)
+     }
+ 
 diff --git a/common/src/main/java/com/shilapi/xcertplay/PsaDiagnosticPolicy.kt b/common/src/main/java/com/shilapi/xcertplay/PsaDiagnosticPolicy.kt
 new file mode 100644
 index 0000000..eff1cdc
@@ -48,19 +59,26 @@ index 0000000..eff1cdc
 +    }
 +}
 diff --git a/common/src/main/java/com/shilapi/xcertplay/SessionLogFile.kt b/common/src/main/java/com/shilapi/xcertplay/SessionLogFile.kt
-index bc6682d..17bf383 100644
+index bc6682d..98a1643 100644
 --- a/common/src/main/java/com/shilapi/xcertplay/SessionLogFile.kt
 +++ b/common/src/main/java/com/shilapi/xcertplay/SessionLogFile.kt
-@@ -5,7 +5,7 @@ import java.io.File
+@@ -5,9 +5,13 @@ import java.io.File
  
  /** Bounded, private diagnostics. Each write is redacted before touching storage. */
  internal class SessionLogFile(val file: File) : Closeable {
 -    private val lock = Any()
 +    private val lock = locks.computeIfAbsent(file.absolutePath) { Any() }
      private var closed = false
-     private val archiveNames = if (file.name == "direct.log") DIRECT_ARCHIVE_NAMES else ARCHIVE_NAMES
+-    private val archiveNames = if (file.name == "direct.log") DIRECT_ARCHIVE_NAMES else ARCHIVE_NAMES
++    private val archiveNames = when (file.name) {
++        "direct.log" -> DIRECT_ARCHIVE_NAMES
++        "diplay.log" -> ARCHIVE_NAMES
++        else -> (1..3).map { "${file.nameWithoutExtension}-previous-$it.log" }
++    }
      fun reset(header: String) = synchronized(lock) {
-@@ -21,7 +21,7 @@ internal class SessionLogFile(val file: File) : Closeable {
+         if (!closed) {
+             file.parentFile?.mkdirs()
+@@ -21,7 +25,7 @@ internal class SessionLogFile(val file: File) : Closeable {
          val safe = DiagnosticRedactor.redact(line) ?: return@synchronized
          runCatching {
              file.parentFile?.mkdirs()
@@ -69,7 +87,7 @@ index bc6682d..17bf383 100644
                  rotate()
                  file.writeText("")
              }
-@@ -43,6 +43,7 @@ internal class SessionLogFile(val file: File) : Closeable {
+@@ -43,9 +47,10 @@ internal class SessionLogFile(val file: File) : Closeable {
      }
      override fun close() = synchronized(lock) { closed = true }
      companion object {
@@ -77,6 +95,10 @@ index bc6682d..17bf383 100644
          const val MAX_BYTES = 512 * 1024L
          private val ARCHIVE_NAMES = listOf("previous.log") + (2..7).map { "previous-$it.log" }
          private val DIRECT_ARCHIVE_NAMES = (1..3).map { "direct-previous-$it.log" }
+-        val REPORT_NAMES = ARCHIVE_NAMES.reversed() + listOf("diplay.log") + DIRECT_ARCHIVE_NAMES.reversed() + "direct.log" + "disconnect.log"
++        val REPORT_NAMES = ARCHIVE_NAMES.reversed() + listOf("diplay.log") + DIRECT_ARCHIVE_NAMES.reversed() + "direct.log" + (3 downTo 1).map { "disconnect-previous-$it.log" } + "disconnect.log"
+     }
+ }
 diff --git a/common/src/test/java/com/shilapi/xcertplay/CarPlayHostPreparationTest.kt b/common/src/test/java/com/shilapi/xcertplay/CarPlayHostPreparationTest.kt
 index e211715..7f3b106 100644
 --- a/common/src/test/java/com/shilapi/xcertplay/CarPlayHostPreparationTest.kt
@@ -110,10 +132,10 @@ index e211715..7f3b106 100644
      }
 diff --git a/common/src/test/java/com/shilapi/xcertplay/PsaDiagnosticRetentionTest.kt b/common/src/test/java/com/shilapi/xcertplay/PsaDiagnosticRetentionTest.kt
 new file mode 100644
-index 0000000..6475083
+index 0000000..b68dfd0
 --- /dev/null
 +++ b/common/src/test/java/com/shilapi/xcertplay/PsaDiagnosticRetentionTest.kt
-@@ -0,0 +1,25 @@
+@@ -0,0 +1,34 @@
 +package com.shilapi.xcertplay
 +import java.nio.file.Files
 +import org.junit.Assert.*
@@ -132,6 +154,15 @@ index 0000000..6475083
 +            assertTrue(folder.resolve("diplay.log").readText().contains("NoSuchMethodError"))
 +        } finally { folder.deleteRecursively() }
 +    }
++    @Test fun disconnectArchivesDoNotOverwriteAudioVideoEvidence() {
++        val folder = Files.createTempDirectory("psa-separated-retention").toFile()
++        try {
++            folder.resolve("previous.log").writeText("Audio: renderer failed")
++            SessionLogFile(folder.resolve("disconnect.log")).use { log -> repeat(900) { log.append("disconnect " + "x".repeat(650)) } }
++            assertEquals("Audio: renderer failed", folder.resolve("previous.log").readText())
++            assertTrue(folder.resolve("disconnect-previous-1.log").exists())
++        } finally { folder.deleteRecursively() }
++    }
 +    @Test fun detailedCountersRequireDebugButFaultsAndFirstFrameDoNot() {
 +        assertTrue(PsaDiagnosticPolicy.isVerbose("audio stats rx=100"))
 +        assertFalse(PsaDiagnosticPolicy.isVerbose("audio stats writeErrors=3"))
@@ -141,10 +172,10 @@ index 0000000..6475083
 +}
 diff --git a/common/src/test/java/com/shilapi/xcertplay/PsaLauncherReturnTest.kt b/common/src/test/java/com/shilapi/xcertplay/PsaLauncherReturnTest.kt
 new file mode 100644
-index 0000000..1082821
+index 0000000..3caf590
 --- /dev/null
 +++ b/common/src/test/java/com/shilapi/xcertplay/PsaLauncherReturnTest.kt
-@@ -0,0 +1,35 @@
+@@ -0,0 +1,48 @@
 +package com.shilapi.xcertplay
 +
 +import android.content.Intent
@@ -162,6 +193,19 @@ index 0000000..1082821
 +@Config(sdk = [28])
 +@LooperMode(LooperMode.Mode.PAUSED)
 +class PsaLauncherReturnTest {
++    @Test fun wifiSettingsDoesNotInsertALauncherHomeHop() {
++        val activity = Robolectric.buildActivity(DiPlayActivity::class.java).get()
++        val info = android.content.pm.ResolveInfo().apply {
++            activityInfo = android.content.pm.ActivityInfo().apply { packageName = "com.byd.carsettings"; name = "WifiSettings"; exported = true }
++        }
++        shadowOf(activity.packageManager).addResolveInfoForIntent(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS), info)
++        activity.javaClass.getDeclaredMethod("openCarClientWifiSettings").apply { isAccessible = true }.invoke(activity)
++        val intent = shadowOf(activity).nextStartedActivity
++        assertEquals(android.provider.Settings.ACTION_WIFI_SETTINGS, intent.action)
++        assertFalse(intent.hasCategory(Intent.CATEGORY_HOME))
++        assertNull(shadowOf(activity).nextStartedActivity)
++    }
++
 +    @Test fun terminalDisconnectStartsPsaHomeInsteadOfLauncherHomeIntent() {
 +        val activity = Robolectric.buildActivity(CarPlayHostActivity::class.java).get()
 +        try {
@@ -177,6 +221,40 @@ index 0000000..1082821
 +        } finally {
 +            for (name in listOf("teardownExecutor", "airPlayCommandExecutor"))
 +                (activity.javaClass.getDeclaredField(name).apply { isAccessible = true }.get(activity) as ExecutorService).shutdownNow()
++        }
++    }
++}
+diff --git a/common/src/test/java/com/shilapi/xcertplay/PsaSurfaceLifecycleTest.kt b/common/src/test/java/com/shilapi/xcertplay/PsaSurfaceLifecycleTest.kt
+new file mode 100644
+index 0000000..1f53f5b
+--- /dev/null
++++ b/common/src/test/java/com/shilapi/xcertplay/PsaSurfaceLifecycleTest.kt
+@@ -0,0 +1,28 @@
++package com.shilapi.xcertplay
++import android.graphics.SurfaceTexture
++import android.view.Surface
++import com.shilapi.xcertplay.media.AndroidMediaSink
++import org.junit.Assert.*
++import org.junit.Test
++import org.junit.runner.RunWith
++import org.robolectric.RobolectricTestRunner
++import org.robolectric.annotation.Config
++@RunWith(RobolectricTestRunner::class)
++@Config(sdk = [28])
++class PsaSurfaceLifecycleTest {
++    @Test fun oldSurfaceDestructionDoesNotDetachTheNewH264Target() {
++        val firstTexture = SurfaceTexture(1); val secondTexture = SurfaceTexture(2)
++        val first = Surface(firstTexture); val second = Surface(secondTexture)
++        val sink = AndroidMediaSink()
++        try {
++            sink.setSurface(110, first); sink.setSurface(110, second)
++            sink.clearSurface(110, first)
++            val targets = sink.javaClass.getDeclaredField("surfaces").apply { isAccessible = true }.get(sink) as Map<*, *>
++            assertSame(second, targets[110])
++            sink.clearSurface(110, second)
++            assertNull(targets[110])
++        } finally {
++            sink.close(); first.release(); second.release(); firstTexture.release(); secondTexture.release()
 +        }
 +    }
 +}
@@ -416,7 +494,7 @@ index 75855fa..f5e0c5d 100644
          if (live.isEmpty()) return null
 diff --git a/shared/src/test/java/com/shilapi/xcertplay/media/PsaRomAudioGuardTest.kt b/shared/src/test/java/com/shilapi/xcertplay/media/PsaRomAudioGuardTest.kt
 new file mode 100644
-index 0000000..ed645e5
+index 0000000..7b59a02
 --- /dev/null
 +++ b/shared/src/test/java/com/shilapi/xcertplay/media/PsaRomAudioGuardTest.kt
 @@ -0,0 +1,48 @@
@@ -435,7 +513,7 @@ index 0000000..ed645e5
 +    @Test fun decoderConfigureFailureReleasesPartialDecoderAndPropagatesCause() {
 +        val events = mutableListOf<String>()
 +        val failure = assertThrows(IllegalStateException::class.java) {
-+            RomAudioGuard.initialize({ "decoder" }, { throw IllegalStateException("configure rejected") }, { events += "release:$it" })
++            RomAudioGuard.initialize<String>({ "decoder" }, { throw IllegalStateException("configure rejected") }, { events += "release:$it" })
 +        }
 +        assertEquals("configure rejected", failure.message)
 +        assertEquals(listOf("release:decoder"), events)
