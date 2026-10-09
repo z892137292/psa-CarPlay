@@ -60,6 +60,9 @@ jobs:
             echo 'BLOCKED: authorized matching runtime authentication inputs are not configured. No connection-test APK will be produced.' >&2
             exit 1
           fi
+      - name: Clean stale build outputs before validation
+        working-directory: upstream
+        run: ./gradlew clean
       - name: Validate provisioned identity using unchanged AndroidPlay loader
         if: steps.authentication.outputs.configured == 'true'
         working-directory: upstream
@@ -96,7 +99,6 @@ jobs:
         working-directory: upstream
         run: |
           rm -rf mobile/build/outputs/apk/debug
-          ./gradlew clean
           ./gradlew :mobile:assembleStandaloneDebug --stacktrace
       - name: Verify package and record checksums and validation status
         env:
