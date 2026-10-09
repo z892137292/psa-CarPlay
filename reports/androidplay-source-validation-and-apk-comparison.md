@@ -14,7 +14,13 @@ Run https://github.com/z892137292/psa-CarPlay/actions/runs/37873148606:
 - Authentication provisioning gate: BLOCKED.
 - Authenticated standalone APK compilation and verification: SKIPPED.
 Report artifact 11591650383 contains only test and lint reports.
-Subsequent workflow commit ac73a1a9c69ec71a19a4fb8eb4610208dc290d07 adds independent :mobile:assembleDebug with sourceOnly=true solely as code compilation verification. This APK is not uploaded or delivered as a CarPlay test build. Run 37873166975 is pending final verification at report creation.
+Subsequent workflow commit ac73a1a9c69ec71a19a4fb8eb4610208dc290d07 adds independent :mobile:assembleDebug with sourceOnly=true solely as code compilation verification. This APK is not uploaded or delivered as a CarPlay test build. Run https://github.com/z892137292/psa-CarPlay/actions/runs/37873166975 completed:
+- Gradle configuration: PASS.
+- All shared/common unit tests: PASS.
+- Android lint: PASS.
+- Independent source-only :mobile:assembleDebug compilation: PASS.
+- Authorized authentication gate: BLOCKED, overall workflow correctly failed.
+- Authenticated standalone APK: SKIPPED; no connection-capable APK delivered.
 sourceOnly=true applies only to credential-independent checks. The standalone task always runs without sourceOnly and still rejects missing credentials.
 
 ## Original user APK comparison
