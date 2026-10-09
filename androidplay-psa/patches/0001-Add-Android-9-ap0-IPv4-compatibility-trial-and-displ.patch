@@ -1,0 +1,177 @@
+From 0a20ad80b3ba3c1cabe22720a91c9a1084e8714c Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Fri, 9 Oct 2026 09:11:36 +0800
+Subject: [PATCH 1/2] Add Android 9 ap0 IPv4 compatibility trial and display
+ diagnostics
+
+---
+ .../shilapi/xcertplay/CarPlayHostActivity.kt  | 18 +++++++++--
+ .../xcertplay/network/ManualHotspotManager.kt |  2 +-
+ .../xcertplay/network/WirelessHostAddress.kt  | 16 ++++++++++
+ .../orchestration/CarPlayController.kt        |  4 +--
+ .../network/ManualHotspotHostAddressTest.kt   | 32 +++++++++++++++++++
+ 5 files changed, 67 insertions(+), 5 deletions(-)
+ create mode 100644 shared/src/test/java/com/shilapi/xcertplay/network/ManualHotspotHostAddressTest.kt
+
+diff --git a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt b/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
+index ec1f992..03d725d 100644
+--- a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
++++ b/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
+@@ -241,6 +241,7 @@ class CarPlayHostActivity : ComponentActivity() {
+         }
+ 
+         override fun onSurfaceTextureSizeChanged(texture: SurfaceTexture, width: Int, height: Int) {
++            appendLog("DISPLAY surface resized generation=$restartGeneration size=${width}x$height valid=${currentSurface?.isValid}")
+             scheduleDisplaySize(width, height)
+         }
+ 
+@@ -253,11 +254,20 @@ class CarPlayHostActivity : ComponentActivity() {
+             }
+             currentSurface = null
+             currentSurfaceTexture = null
+-            appendLog("Texture surface destroyed")
++            reportedTexture = null
++            appendLog("Texture surface destroyed generation=$restartGeneration")
+             return true
+         }
+ 
+-        override fun onSurfaceTextureUpdated(texture: SurfaceTexture) = Unit
++        private var reportedTexture: SurfaceTexture? = null
++        private var reportedGeneration = -1
++        override fun onSurfaceTextureUpdated(texture: SurfaceTexture) {
++            if (reportedTexture !== texture || reportedGeneration != restartGeneration) {
++                reportedTexture = texture
++                reportedGeneration = restartGeneration
++                appendLog("DISPLAY texture updated generation=$restartGeneration surfaceValid=${currentSurface?.isValid} focused=${hasWindowFocus()} shown=${videoView?.isShown}; physical-screen verification required")
++            }
++        }
+     }
+ 
+     override fun onCreate(savedInstanceState: Bundle?) {
+@@ -409,11 +419,13 @@ class CarPlayHostActivity : ComponentActivity() {
+         }
+     }
+     override fun onPause() {
++        appendLog("DISPLAY activity paused generation=$restartGeneration surfaceValid=${currentSurface?.isValid}")
+         mainHandler.removeCallbacks(hotspotWarningTick)
+         super.onPause()
+     }
+     override fun onResume() {
+         super.onResume()
++        appendLog("DISPLAY activity resumed generation=$restartGeneration surfaceValid=${currentSurface?.isValid}")
+         mainHandler.removeCallbacks(hotspotWarningTick)
+         mainHandler.post(hotspotWarningTick)
+         locationPermissionAvailable = hasFineLocationPermission()
+@@ -426,10 +438,12 @@ class CarPlayHostActivity : ComponentActivity() {
+ 
+     override fun onWindowFocusChanged(hasFocus: Boolean) {
+         super.onWindowFocusChanged(hasFocus)
++        appendLog("DISPLAY window focus=$hasFocus generation=$restartGeneration surfaceValid=${currentSurface?.isValid} shown=${videoView?.isShown}")
+         if (hasFocus) applyFullscreenMode()
+     }
+ 
+     override fun onStop() {
++        appendLog("DISPLAY activity stopped generation=$restartGeneration finishing=$isFinishing")
+         // The controller, USB/iAP2 link, and VPN attachment intentionally outlive the UI.
+         super.onStop()
+     }
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/network/ManualHotspotManager.kt b/shared/src/main/java/com/shilapi/xcertplay/network/ManualHotspotManager.kt
+index 945d44b..b79e035 100644
+--- a/shared/src/main/java/com/shilapi/xcertplay/network/ManualHotspotManager.kt
++++ b/shared/src/main/java/com/shilapi/xcertplay/network/ManualHotspotManager.kt
+@@ -255,7 +255,7 @@ class ManualHotspotManager(
+     }
+ 
+     private fun NetworkInterface.hotspotAddress(): InetAddress? =
+-        wirelessHostAddress(Collections.list(inetAddresses), index)
++        manualHotspotHostAddress(Collections.list(inetAddresses), index, name, Build.VERSION.SDK_INT)
+ 
+     private fun frequencyFromConnectionInfo(): Int? {
+         val connectionInfo = try {
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/network/WirelessHostAddress.kt b/shared/src/main/java/com/shilapi/xcertplay/network/WirelessHostAddress.kt
+index 262b652..d11899d 100644
+--- a/shared/src/main/java/com/shilapi/xcertplay/network/WirelessHostAddress.kt
++++ b/shared/src/main/java/com/shilapi/xcertplay/network/WirelessHostAddress.kt
+@@ -16,3 +16,19 @@ internal fun wirelessHostAddress(addresses: List<InetAddress>, interfaceIndex: I
+             !it.isAnyLocalAddress && !it.isMulticastAddress
+     }
+ }
++
++/** Android 9 ap0 compatibility trial; other interfaces and OS versions retain their policy. */
++internal fun manualHotspotHostAddress(
++    addresses: List<InetAddress>,
++    interfaceIndex: Int,
++    interfaceName: String,
++    sdkInt: Int,
++): InetAddress? {
++    if (sdkInt == 28 && interfaceName == "ap0") {
++        addresses.firstOrNull {
++            it is Inet4Address && !it.isLoopbackAddress && !it.isLinkLocalAddress &&
++                !it.isAnyLocalAddress && !it.isMulticastAddress
++        }?.let { return it }
++    }
++    return wirelessHostAddress(addresses, interfaceIndex)
++}
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt b/shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt
+index 4863ed7..518c082 100644
+--- a/shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt
++++ b/shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt
+@@ -948,7 +948,7 @@ class CarPlayController(
+                     throw IOException(result.message)
+             }
+             debugLog(
+-                "wireless AirPlay listener attached bind=$hostAddressText " +
++                "wireless AirPlay listener attached generation=$generation bind=$hostAddressText " +
+                     "port=${airPlayConfig.port}",
+             )
+             if (isStaleWirelessRun(generation)) {
+@@ -970,7 +970,7 @@ class CarPlayController(
+             bonjour = bonjourClient
+             bonjourClient.start()
+             onStatus(CarPlayStatus.BroadcastReady(hostAddressText))
+-            debugLog("wireless Bonjour services started mode=interface iface=${hotspotInfo.interfaceName ?: "unknown"}")
++            debugLog("wireless Bonjour services started generation=$generation mode=interface iface=${hotspotInfo.interfaceName ?: "unknown"} host=$hostAddressText port=${endpoint.airPlayPort} handoffHost=${endpoint.ipAddresses.joinToString()}")
+             if (isStaleWirelessRun(generation)) {
+                 closeWirelessStack()
+                 return
+diff --git a/shared/src/test/java/com/shilapi/xcertplay/network/ManualHotspotHostAddressTest.kt b/shared/src/test/java/com/shilapi/xcertplay/network/ManualHotspotHostAddressTest.kt
+new file mode 100644
+index 0000000..2d1b324
+--- /dev/null
++++ b/shared/src/test/java/com/shilapi/xcertplay/network/ManualHotspotHostAddressTest.kt
+@@ -0,0 +1,32 @@
++package com.shilapi.xcertplay.network
++
++import java.net.Inet4Address
++import java.net.Inet6Address
++import java.net.InetAddress
++import org.junit.Assert.*
++import org.junit.Test
++
++class ManualHotspotHostAddressTest {
++    private val ipv4 = InetAddress.getByName("10.42.7.1")
++    private val ipv6 = InetAddress.getByName("fe80::1")
++
++    @Test fun android9Ap0UsesActualIpv4RegardlessOfEnumerationOrder() {
++        for (addresses in listOf(listOf(ipv6, ipv4), listOf(ipv4, ipv6))) {
++            assertEquals(ipv4, manualHotspotHostAddress(addresses, 7, "ap0", 28))
++        }
++    }
++    @Test fun missingIpv4FallsBackToScopedIpv6() {
++        val result = manualHotspotHostAddress(listOf(ipv6), 7, "ap0", 28) as Inet6Address
++        assertEquals(7, result.scopeId)
++    }
++    @Test fun otherModesKeepIpv6Preference() {
++        for ((name, sdk) in listOf("ap0" to 29, "ap1" to 28, "wlan0" to 28, "p2p0" to 28)) {
++            assertTrue(manualHotspotHostAddress(listOf(ipv4, ipv6), 7, name, sdk) is Inet6Address)
++        }
++    }
++    @Test fun unusableIpv4IsRejected() {
++        val rejected = listOf("127.0.0.1", "169.254.2.1", "0.0.0.0", "224.0.0.1").map(InetAddress::getByName)
++        assertNull(manualHotspotHostAddress(rejected, 7, "ap0", 28))
++        assertTrue(manualHotspotHostAddress(rejected + ipv4, 7, "ap0", 28) is Inet4Address)
++    }
++}
+-- 
+2.51.1
+

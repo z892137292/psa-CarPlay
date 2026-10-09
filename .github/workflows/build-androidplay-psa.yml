@@ -1,0 +1,118 @@
+name: AndroidPlay PSA IPv4 compatibility trial
+on:
+  workflow_dispatch:
+  push:
+    branches: [psa/androidplay-1.2.0-ipv4]
+    paths:
+      - 'androidplay-psa/**'
+      - '.github/workflows/build-androidplay-psa.yml'
+permissions:
+  contents: read
+concurrency:
+  group: androidplay-psa-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;29.0.14206865
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Materialize exact AndroidPlay Build 45 and reviewed PSA patches
+        run: |
+          git clone https://github.com/Roylyl/AndroidPlay.git upstream
+          git -C upstream checkout --detach 793e488334a4e0c23459b659c271b7715ae9a9e7
+          git -C upstream config user.name 'PSA Build'
+          git -C upstream config user.email 'psa-build@users.noreply.github.com'
+          git -C upstream am "$GITHUB_WORKSPACE"/androidplay-psa/patches/*.patch
+          git -C upstream diff --check 793e488334a4e0c23459b659c271b7715ae9a9e7 HEAD
+          chmod +x upstream/gradlew
+      - name: Prepare explicitly provisioned authentication or label source-only
+        id: authentication
+        env:
+          MFI_IDENTITY: ${{ secrets.ANDROIDPLAY_MFI_IDENTITY_PK8_BASE64 }}
+          MFI_CERTIFICATE: ${{ secrets.ANDROIDPLAY_MFI_CERTIFICATE_P7B_BASE64 }}
+        run: |
+          if [ -n "$MFI_IDENTITY" ] && [ -n "$MFI_CERTIFICATE" ]; then
+            mkdir -p "$RUNNER_TEMP/androidplay-auth/offline-mfi"
+            printf '%s' "$MFI_IDENTITY" | base64 -d > "$RUNNER_TEMP/androidplay-auth/offline-mfi/identity.pk8"
+            printf '%s' "$MFI_CERTIFICATE" | base64 -d > "$RUNNER_TEMP/androidplay-auth/offline-mfi/certificate.p7b"
+            test -s "$RUNNER_TEMP/androidplay-auth/offline-mfi/identity.pk8"
+            test -s "$RUNNER_TEMP/androidplay-auth/offline-mfi/certificate.p7b"
+            echo "ANDROIDPLAY_AUTH_ASSETS_DIR=$RUNNER_TEMP/androidplay-auth" >> "$GITHUB_ENV"
+            echo 'build_flags=' >> "$GITHUB_OUTPUT"
+            echo 'label=AUTH-PROVISIONED-debug-NOT-DEVICE-VALIDATED' >> "$GITHUB_OUTPUT"
+          elif [ -n "$MFI_IDENTITY" ] || [ -n "$MFI_CERTIFICATE" ]; then
+            echo 'Incomplete authentication provisioning; refusing ambiguous build.' >&2
+            exit 1
+          else
+            echo 'build_flags=-Pandroidplay.sourceOnly=true' >> "$GITHUB_OUTPUT"
+            echo 'label=SOURCE-ONLY-debug-NO-CARPLAY-AUTH' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Run all shared and common unit tests
+        id: tests
+        continue-on-error: true
+        working-directory: upstream
+        run: ./gradlew ${{ steps.authentication.outputs.build_flags }} :shared:testDebugUnitTest :common:testDebugUnitTest --stacktrace
+      - name: Run Android lint including API 28 checks
+        id: lint
+        continue-on-error: true
+        working-directory: upstream
+        run: ./gradlew ${{ steps.authentication.outputs.build_flags }} :mobile:lintDebug --stacktrace
+      - name: Compile debug APK with explicit capability label
+        working-directory: upstream
+        run: ./gradlew ${{ steps.authentication.outputs.build_flags }} :mobile:assembleDebug --stacktrace
+      - name: Verify package and record checksums and validation status
+        env:
+          CAPABILITY: ${{ steps.authentication.outputs.label }}
+          TEST_OUTCOME: ${{ steps.tests.outcome }}
+          LINT_OUTCOME: ${{ steps.lint.outcome }}
+        run: |
+          mkdir -p out
+          mapfile -t APKS < <(find upstream/mobile/build/outputs/apk/debug -maxdepth 1 -name '*.apk' -type f)
+          test "${#APKS[@]}" -eq 1
+          APK="${APKS[0]}"
+          cp "$APK" "out/AndroidPlay-1.2.0-psa01-B46-$CAPABILITY.apk"
+          SDK_TOOL="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -n 1)"
+          "$SDK_TOOL" dump badging "$APK" > out/APK-INFO.txt
+          grep -q "name='com.androidplay.app'" out/APK-INFO.txt
+          grep -q "sdkVersion:'28'" out/APK-INFO.txt
+          if [[ "$CAPABILITY" == SOURCE-ONLY* ]]; then
+            if unzip -Z1 "$APK" | grep -q '^assets/offline-mfi/'; then
+              echo 'Source-only APK unexpectedly includes authentication assets.' >&2
+              exit 1
+            fi
+          else
+            unzip -Z1 "$APK" | grep -q '^assets/offline-mfi/identity.pk8$'
+            unzip -Z1 "$APK" | grep -q '^assets/offline-mfi/certificate.p7b$'
+          fi
+          printf 'Version: 1.2.0-psa01 / Build 46\nBaseline: 793e488334a4e0c23459b659c271b7715ae9a9e7\nRepository commit: %s\nCapability: %s\nUnit tests: %s\nLint: %s\nPSA screen, audio, touch, three reconnects, 15 minutes: NOT TESTED / NOT PASSED\nDebug signed: do not assume existing installation signature compatibility.\n' "$GITHUB_SHA" "$CAPABILITY" "$TEST_OUTCOME" "$LINT_OUTCOME" > out/BUILD-REPORT.txt
+          cp androidplay-psa/README.md out/
+          (cd out && sha256sum *.apk > SHA256SUMS.txt)
+          cat out/BUILD-REPORT.txt >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: AndroidPlay-1.2.0-psa01-${{ steps.authentication.outputs.label }}
+          path: |
+            out/*
+            upstream/shared/build/reports/tests/
+            upstream/common/build/reports/tests/
+            upstream/mobile/build/reports/lint-results-debug.*
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Enforce verification result
+        if: steps.tests.outcome != 'success' || steps.lint.outcome != 'success'
+        run: |
+          echo 'One or more verification checks did not pass; retained APK is a diagnostic build.' >&2
+          exit 1
+      - name: Remove runtime authentication files
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/androidplay-auth"
