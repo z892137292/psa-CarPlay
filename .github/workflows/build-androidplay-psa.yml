@@ -47,6 +47,11 @@ jobs:
         continue-on-error: true
         working-directory: upstream
         run: ./gradlew -Pandroidplay.sourceOnly=true :mobile:lintDebug --stacktrace
+      - name: Compile source-only APK for code validation (not connection testing)
+        id: source_compile
+        continue-on-error: true
+        working-directory: upstream
+        run: ./gradlew -Pandroidplay.sourceOnly=true :mobile:assembleDebug --stacktrace
       - name: Require explicitly authorized authentication for connection-test APK
         id: authentication
         env:
