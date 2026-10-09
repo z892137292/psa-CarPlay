@@ -1,0 +1,64 @@
+From 10bd634c22071a2599c2cfd0e1325a711eb41549 Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Fri, 9 Oct 2026 09:58:24 +0800
+Subject: [PATCH] Verify standalone debug APK includes exact provisioned
+ authentication assets
+
+---
+ mobile/build.gradle.kts | 36 ++++++++++++++++++++++++++++++++++--
+ 1 file changed, 34 insertions(+), 2 deletions(-)
+
+diff --git a/mobile/build.gradle.kts b/mobile/build.gradle.kts
+index 9e4c728..dc9a990 100644
+--- a/mobile/build.gradle.kts
++++ b/mobile/build.gradle.kts
+@@ -1,3 +1,5 @@
++import java.util.zip.ZipFile
++
+ plugins {
+     alias(libs.plugins.android.application)
+ }
+@@ -104,8 +106,38 @@ val verifyStandaloneAuthentication by tasks.registering {
+     }
+ }
+ tasks.named("preBuild") { mustRunAfter(verifyStandaloneAuthentication) }
++// Inspect the assembled APK, not just the configured input directory.
++val verifyStandaloneDebugApk by tasks.registering {
++    group = "verification"
++    description = "Verify standalone APK authentication assets against the selected inputs."
++    dependsOn(verifyStandaloneAuthentication, "assembleDebug")
++    doLast {
++        val directory = checkNotNull(localAuthenticationAssets)
++        val apkDirectory = layout.buildDirectory.dir("outputs/apk/debug").get().asFile
++        val apks = apkDirectory.listFiles()?.filter { it.isFile && it.extension == "apk" }.orEmpty()
++        check(apks.size == 1) { "Expected exactly one freshly built debug APK" }
++        ZipFile(apks.single()).use { apk ->
++            for (name in listOf("identity.pk8", "certificate.p7b")) {
++                val path = "offline-mfi/$name"
++                val expected = directory.resolve(path).readBytes()
++                val actual = apk.getInputStream(checkNotNull(apk.getEntry("assets/$path")) {
++                    "Standalone APK is missing authentication asset: $name"
++                }).use { it.readBytes() }
++                try {
++                    check(expected.isNotEmpty() && actual.contentEquals(expected)) {
++                        "Standalone APK authentication asset is empty or does not match input: $name"
++                    }
++                } finally {
++                    expected.fill(0)
++                    actual.fill(0)
++                }
++            }
++        }
++        logger.lifecycle("Standalone APK authentication asset packaging verified (contents not logged)")
++    }
++}
+ tasks.register("assembleStandaloneDebug") {
+     group = "build"
+-    description = "Build a standalone car-test APK with explicitly provisioned authentication."
+-    dependsOn(verifyStandaloneAuthentication, "assembleDebug")
++    description = "Build and verify a standalone car-test APK with explicitly provisioned authentication."
++    dependsOn(verifyStandaloneDebugApk)
+ }
+-- 
+2.51.1
+

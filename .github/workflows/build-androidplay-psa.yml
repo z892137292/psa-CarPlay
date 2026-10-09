@@ -34,7 +34,10 @@ jobs:
           git -C upstream am "$GITHUB_WORKSPACE"/androidplay-psa/patches/*.patch
           git -C upstream diff --check 793e488334a4e0c23459b659c271b7715ae9a9e7 HEAD
           chmod +x upstream/gradlew
-      - name: Prepare explicitly provisioned authentication or label source-only
+      - name: Check updated Gradle task configuration
+        working-directory: upstream
+        run: ./gradlew :mobile:tasks --all
+      - name: Require explicitly authorized authentication for connection-test APK
         id: authentication
         env:
           AUTH_USE_APPROVED: ${{ vars.ANDROIDPLAY_AUTH_USE_APPROVED }}
@@ -53,14 +56,9 @@ jobs:
             echo 'build_flags=' >> "$GITHUB_OUTPUT"
             echo 'label=AUTH-PROVISIONED-debug-NOT-DEVICE-VALIDATED' >> "$GITHUB_OUTPUT"
             echo 'configured=true' >> "$GITHUB_OUTPUT"
-          elif [ -n "$MFI_IDENTITY" ] || [ -n "$MFI_CERTIFICATE" ]; then
-            echo 'Incomplete authentication provisioning; refusing ambiguous build.' >&2
-            exit 1
           else
-            echo 'Authentication absent or usage approval not recorded; building source-only.'
-            echo 'configured=false' >> "$GITHUB_OUTPUT"
-            echo 'build_flags=-Pandroidplay.sourceOnly=true' >> "$GITHUB_OUTPUT"
-            echo 'label=SOURCE-ONLY-debug-NO-CARPLAY-AUTH' >> "$GITHUB_OUTPUT"
+            echo 'BLOCKED: authorized matching runtime authentication inputs are not configured. No connection-test APK will be produced.' >&2
+            exit 1
           fi
       - name: Validate provisioned identity using unchanged AndroidPlay loader
         if: steps.authentication.outputs.configured == 'true'
@@ -94,9 +92,12 @@ jobs:
         continue-on-error: true
         working-directory: upstream
         run: ./gradlew ${{ steps.authentication.outputs.build_flags }} :mobile:lintDebug --stacktrace
-      - name: Compile debug APK with explicit capability label
+      - name: Clean and build verified standalone connection-test APK
         working-directory: upstream
-        run: ./gradlew ${{ steps.authentication.outputs.build_flags }} :mobile:assembleDebug --stacktrace
+        run: |
+          rm -rf mobile/build/outputs/apk/debug
+          ./gradlew clean
+          ./gradlew :mobile:assembleStandaloneDebug --stacktrace
       - name: Verify package and record checksums and validation status
         env:
           AUTH_REDISTRIBUTION_APPROVED: ${{ vars.ANDROIDPLAY_AUTH_REDISTRIBUTION_APPROVED }}
@@ -108,7 +109,22 @@ jobs:
           mapfile -t APKS < <(find upstream/mobile/build/outputs/apk/debug -maxdepth 1 -name '*.apk' -type f)
           test "${#APKS[@]}" -eq 1
           APK="${APKS[0]}"
-          if [[ "$CAPABILITY" == SOURCE-ONLY* ]] || [ "$AUTH_REDISTRIBUTION_APPROVED" = true ]; then
+          python3 - "$APK" <<'PYVERIFY'
+          import os, sys, zipfile
+          from pathlib import Path
+          root = Path(os.environ["ANDROIDPLAY_AUTH_ASSETS_DIR"])
+          with zipfile.ZipFile(sys.argv[1]) as apk:
+              for name in ("identity.pk8", "certificate.p7b"):
+                  path = "offline-mfi/" + name
+                  expected = (root / path).read_bytes()
+                  actual = apk.read("assets/" + path)
+                  assert expected and actual == expected, "APK authentication asset mismatch: " + name
+              assert any(n.startswith("lib/arm64-v8a/") for n in apk.namelist()), "PSA arm64 native libraries missing"
+          print("PASS: APK authentication resources match authorized inputs; arm64 native libraries present")
+          PYVERIFY
+          SIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
+          "$SIGNER" verify --verbose --print-certs "$APK" > out/APK-SIGNATURE.txt
+          if [ "$AUTH_REDISTRIBUTION_APPROVED" = true ]; then
             cp "$APK" "out/AndroidPlay-1.2.0-psa01-B46-$CAPABILITY.apk"
           else
             echo 'Authenticated APK built for authorized validation only; redistribution approval absent, APK not uploaded.'
@@ -117,15 +133,9 @@ jobs:
           "$SDK_TOOL" dump badging "$APK" > out/APK-INFO.txt
           grep -q "name='com.androidplay.app'" out/APK-INFO.txt
           grep -q "sdkVersion:'28'" out/APK-INFO.txt
-          if [[ "$CAPABILITY" == SOURCE-ONLY* ]]; then
-            if unzip -Z1 "$APK" | grep -q '^assets/offline-mfi/'; then
-              echo 'Source-only APK unexpectedly includes authentication assets.' >&2
-              exit 1
-            fi
-          else
-            unzip -Z1 "$APK" | grep -q '^assets/offline-mfi/identity.pk8$'
-            unzip -Z1 "$APK" | grep -q '^assets/offline-mfi/certificate.p7b$'
-          fi
+          grep -q "versionCode='46'" out/APK-INFO.txt
+          grep -q "versionName='1.2.0-psa01'" out/APK-INFO.txt
+
           printf 'Version: 1.2.0-psa01 / Build 46\nBaseline: 793e488334a4e0c23459b659c271b7715ae9a9e7\nRepository commit: %s\nCapability: %s\nUnit tests: %s\nLint: %s\nPSA screen, audio, touch, three reconnects, 15 minutes: NOT TESTED / NOT PASSED\nDebug signed: do not assume existing installation signature compatibility.\n' "$GITHUB_SHA" "$CAPABILITY" "$TEST_OUTCOME" "$LINT_OUTCOME" > out/BUILD-REPORT.txt
           cp androidplay-psa/README.md out/
           sha256sum "$APK" | sed "s|$APK|AndroidPlay-1.2.0-psa01-B46-$CAPABILITY.apk|" > out/SHA256SUMS.txt
@@ -149,3 +159,4 @@ jobs:
       - name: Remove runtime authentication files
         if: always()
         run: rm -rf "$RUNNER_TEMP/androidplay-auth"
+
