@@ -37,6 +37,16 @@ jobs:
       - name: Check updated Gradle task configuration
         working-directory: upstream
         run: ./gradlew :mobile:tasks --all
+      - name: Run all shared and common unit tests
+        id: tests
+        continue-on-error: true
+        working-directory: upstream
+        run: ./gradlew -Pandroidplay.sourceOnly=true :shared:testDebugUnitTest :common:testDebugUnitTest --stacktrace
+      - name: Run Android lint including API 28 checks
+        id: lint
+        continue-on-error: true
+        working-directory: upstream
+        run: ./gradlew -Pandroidplay.sourceOnly=true :mobile:lintDebug --stacktrace
       - name: Require explicitly authorized authentication for connection-test APK
         id: authentication
         env:
@@ -85,16 +95,6 @@ jobs:
           }
           KOTLIN
           ./gradlew :shared:testDebugUnitTest --tests 'com.shilapi.xcertplay.mfi.ProvisionedRuntimeIdentityValidationTest'
-      - name: Run all shared and common unit tests
-        id: tests
-        continue-on-error: true
-        working-directory: upstream
-        run: ./gradlew ${{ steps.authentication.outputs.build_flags }} :shared:testDebugUnitTest :common:testDebugUnitTest --stacktrace
-      - name: Run Android lint including API 28 checks
-        id: lint
-        continue-on-error: true
-        working-directory: upstream
-        run: ./gradlew ${{ steps.authentication.outputs.build_flags }} :mobile:lintDebug --stacktrace
       - name: Clean and build verified standalone connection-test APK
         working-directory: upstream
         run: |
