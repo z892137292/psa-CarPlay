@@ -1,0 +1,206 @@
+--- a/smali_classes3/com/shilapi/xcertplay/AndroidPlayActivity.smali
++++ b/smali_classes3/com/shilapi/xcertplay/AndroidPlayActivity.smali
+@@ -2541,6 +2541,8 @@
+ 
+     check-cast v1, Landroid/view/View;
+ 
++    invoke-static {v8}, Lcom/shilapi/xcertplay/PsaPasswordToggle;->wrap(Landroid/widget/EditText;)Landroid/widget/LinearLayout;
++    move-result-object v1
+     invoke-virtual {v6, v1}, Landroid/widget/LinearLayout;->addView(Landroid/view/View;)V
+ 
+     .line 591
+@@ -4947,6 +4949,14 @@
+ 
+     check-cast v6, Landroid/view/View;
+ 
++    invoke-virtual {v3, v6}, Landroid/widget/LinearLayout;->addView(Landroid/view/View;)V
++
++    invoke-static {p0, v3}, Lcom/shilapi/xcertplay/PsaHomeSummary;->add(Landroid/content/Context;Landroid/widget/LinearLayout;)V
++    new-instance v6, Lcom/shilapi/xcertplay/AndroidPlayActivity$$ExternalSyntheticLambda32;
++    invoke-direct {v6, p0}, Lcom/shilapi/xcertplay/AndroidPlayActivity$$ExternalSyntheticLambda32;-><init>(Lcom/shilapi/xcertplay/AndroidPlayActivity;)V
++    const-string v7, "断开当前连接"
++    invoke-direct {p0, v7, v6}, Lcom/shilapi/xcertplay/AndroidPlayActivity;->button(Ljava/lang/String;Lkotlin/jvm/functions/Function0;)Landroid/widget/Button;
++    move-result-object v6
+     invoke-virtual {v3, v6}, Landroid/widget/LinearLayout;->addView(Landroid/view/View;)V
+ 
+     .line 235
+--- a/smali_classes8/com/shilapi/xcertplay/network/ManualHotspotManager.smali
++++ b/smali_classes8/com/shilapi/xcertplay/network/ManualHotspotManager.smali
+@@ -1811,7 +1811,7 @@
+ 
+     move-result v1
+ 
+-    invoke-static {v0, v1}, Lcom/shilapi/xcertplay/network/WirelessHostAddressKt;->wirelessHostAddress(Ljava/util/List;I)Ljava/net/InetAddress;
++    invoke-static {v0, v1, p1}, Lcom/shilapi/xcertplay/network/WirelessHostAddressKt;->psaHostAddress(Ljava/util/List;ILjava/net/NetworkInterface;)Ljava/net/InetAddress;
+ 
+     move-result-object v0
+ 
+--- a/smali_classes8/com/shilapi/xcertplay/network/WirelessHostAddressKt.smali
++++ b/smali_classes8/com/shilapi/xcertplay/network/WirelessHostAddressKt.smali
+@@ -309,3 +309,44 @@
+     .line 14
+     return-object v0
+ .end method
++
++.method public static psaHostAddress(Ljava/util/List;ILjava/net/NetworkInterface;)Ljava/net/InetAddress;
++    .locals 4
++    sget v0, Landroid/os/Build$VERSION;->SDK_INT:I
++    const/16 v1, 0x1c
++    if-ne v0, v1, :fallback
++    invoke-virtual {p2}, Ljava/net/NetworkInterface;->getName()Ljava/lang/String;
++    move-result-object v0
++    const-string v1, "ap0"
++    invoke-virtual {v1, v0}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
++    move-result v0
++    if-eqz v0, :fallback
++    invoke-interface {p0}, Ljava/util/List;->iterator()Ljava/util/Iterator;
++    move-result-object v0
++    :loop
++    invoke-interface {v0}, Ljava/util/Iterator;->hasNext()Z
++    move-result v1
++    if-eqz v1, :fallback
++    invoke-interface {v0}, Ljava/util/Iterator;->next()Ljava/lang/Object;
++    move-result-object v1
++    instance-of v2, v1, Ljava/net/Inet4Address;
++    if-eqz v2, :loop
++    check-cast v1, Ljava/net/InetAddress;
++    invoke-virtual {v1}, Ljava/net/InetAddress;->isLoopbackAddress()Z
++    move-result v2
++    if-nez v2, :loop
++    invoke-virtual {v1}, Ljava/net/InetAddress;->isLinkLocalAddress()Z
++    move-result v2
++    if-nez v2, :loop
++    invoke-virtual {v1}, Ljava/net/InetAddress;->isAnyLocalAddress()Z
++    move-result v2
++    if-nez v2, :loop
++    invoke-virtual {v1}, Ljava/net/InetAddress;->isMulticastAddress()Z
++    move-result v2
++    if-nez v2, :loop
++    return-object v1
++    :fallback
++    invoke-static {p0, p1}, Lcom/shilapi/xcertplay/network/WirelessHostAddressKt;->wirelessHostAddress(Ljava/util/List;I)Ljava/net/InetAddress;
++    move-result-object v0
++    return-object v0
++.end method
+--- /dev/null
++++ b/smali_classes3/com/shilapi/xcertplay/PsaPasswordToggle.smali
+@@ -0,0 +1,74 @@
++.class public final Lcom/shilapi/xcertplay/PsaPasswordToggle;
++.super Ljava/lang/Object;
++.implements Landroid/view/View$OnClickListener;
++.field private final input:Landroid/widget/EditText;
++.field private visible:Z
++.method public constructor <init>(Landroid/widget/EditText;)V
++    .locals 0
++    invoke-direct {p0}, Ljava/lang/Object;-><init>()V
++    iput-object p1, p0, Lcom/shilapi/xcertplay/PsaPasswordToggle;->input:Landroid/widget/EditText;
++    return-void
++.end method
++.method public static wrap(Landroid/widget/EditText;)Landroid/widget/LinearLayout;
++    .locals 6
++    invoke-virtual {p0}, Landroid/widget/EditText;->getContext()Landroid/content/Context;
++    move-result-object v0
++    new-instance v1, Landroid/widget/LinearLayout;
++    invoke-direct {v1, v0}, Landroid/widget/LinearLayout;-><init>(Landroid/content/Context;)V
++    const/4 v2, 0x0
++    invoke-virtual {v1, v2}, Landroid/widget/LinearLayout;->setOrientation(I)V
++    const/16 v2, 0x10
++    invoke-virtual {v1, v2}, Landroid/widget/LinearLayout;->setGravity(I)V
++    const/4 v2, 0x0
++    const/4 v3, -0x2
++    const/high16 v4, 0x3f800000
++    new-instance v5, Landroid/widget/LinearLayout$LayoutParams;
++    invoke-direct {v5, v2, v3, v4}, Landroid/widget/LinearLayout$LayoutParams;-><init>(IIF)V
++    invoke-virtual {v1, p0, v5}, Landroid/widget/LinearLayout;->addView(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V
++    invoke-static {}, Landroid/text/method/PasswordTransformationMethod;->getInstance()Landroid/text/method/PasswordTransformationMethod;
++    move-result-object v2
++    invoke-virtual {p0, v2}, Landroid/widget/EditText;->setTransformationMethod(Landroid/text/method/TransformationMethod;)V
++    new-instance v2, Landroid/widget/Button;
++    invoke-direct {v2, v0}, Landroid/widget/Button;-><init>(Landroid/content/Context;)V
++    const-string v3, "显示"
++    invoke-virtual {v2, v3}, Landroid/widget/Button;->setText(Ljava/lang/CharSequence;)V
++    const-string v3, "显示密码"
++    invoke-virtual {v2, v3}, Landroid/widget/Button;->setContentDescription(Ljava/lang/CharSequence;)V
++    new-instance v3, Lcom/shilapi/xcertplay/PsaPasswordToggle;
++    invoke-direct {v3, p0}, Lcom/shilapi/xcertplay/PsaPasswordToggle;-><init>(Landroid/widget/EditText;)V
++    invoke-virtual {v2, v3}, Landroid/widget/Button;->setOnClickListener(Landroid/view/View$OnClickListener;)V
++    invoke-virtual {v1, v2}, Landroid/widget/LinearLayout;->addView(Landroid/view/View;)V
++    return-object v1
++.end method
++.method public onClick(Landroid/view/View;)V
++    .locals 5
++    iget-object v0, p0, Lcom/shilapi/xcertplay/PsaPasswordToggle;->input:Landroid/widget/EditText;
++    invoke-virtual {v0}, Landroid/widget/EditText;->getSelectionStart()I
++    move-result v1
++    invoke-virtual {v0}, Landroid/widget/EditText;->getSelectionEnd()I
++    move-result v2
++    iget-boolean v3, p0, Lcom/shilapi/xcertplay/PsaPasswordToggle;->visible:Z
++    xor-int/lit8 v3, v3, 0x1
++    iput-boolean v3, p0, Lcom/shilapi/xcertplay/PsaPasswordToggle;->visible:Z
++    if-eqz v3, :hide
++    const/4 v4, 0x0
++    invoke-virtual {v0, v4}, Landroid/widget/EditText;->setTransformationMethod(Landroid/text/method/TransformationMethod;)V
++    const-string v3, "隐藏"
++    const-string v4, "隐藏密码"
++    goto :label
++    :hide
++    invoke-static {}, Landroid/text/method/PasswordTransformationMethod;->getInstance()Landroid/text/method/PasswordTransformationMethod;
++    move-result-object v4
++    invoke-virtual {v0, v4}, Landroid/widget/EditText;->setTransformationMethod(Landroid/text/method/TransformationMethod;)V
++    const-string v3, "显示"
++    const-string v4, "显示密码"
++    :label
++    check-cast p1, Landroid/widget/Button;
++    invoke-virtual {p1, v3}, Landroid/widget/Button;->setText(Ljava/lang/CharSequence;)V
++    invoke-virtual {p1, v4}, Landroid/widget/Button;->setContentDescription(Ljava/lang/CharSequence;)V
++    if-ltz v1, :done
++    if-ltz v2, :done
++    invoke-virtual {v0, v1, v2}, Landroid/widget/EditText;->setSelection(II)V
++    :done
++    return-void
++.end method
+--- /dev/null
++++ b/smali_classes3/com/shilapi/xcertplay/PsaHomeSummary.smali
+@@ -0,0 +1,42 @@
++.class public final Lcom/shilapi/xcertplay/PsaHomeSummary;
++.super Ljava/lang/Object;
++.method public static add(Landroid/content/Context;Landroid/widget/LinearLayout;)V
++    .locals 5
++    sget-object v0, Lcom/shilapi/xcertplay/AirPlayPersistence;->INSTANCE:Lcom/shilapi/xcertplay/AirPlayPersistence;
++    invoke-virtual {v0, p0}, Lcom/shilapi/xcertplay/AirPlayPersistence;->loadManualHotspotSsid(Landroid/content/Context;)Ljava/lang/String;
++    move-result-object v1
++    invoke-virtual {v1}, Ljava/lang/String;->length()I
++    move-result v2
++    if-nez v2, :ssid
++    const-string v1, "未配置"
++    :ssid
++    invoke-virtual {v0, p0}, Lcom/shilapi/xcertplay/AirPlayPersistence;->loadManualHotspotPassphrase(Landroid/content/Context;)Ljava/lang/String;
++    move-result-object v2
++    invoke-virtual {v2}, Ljava/lang/String;->length()I
++    move-result v2
++    if-eqz v2, :empty
++    const-string v2, "已配置"
++    goto :text
++    :empty
++    const-string v2, "未配置"
++    :text
++    new-instance v3, Ljava/lang/StringBuilder;
++    invoke-direct {v3}, Ljava/lang/StringBuilder;-><init>()V
++    const-string v4, "热点名称："
++    invoke-virtual {v3, v4}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
++    invoke-virtual {v3, v1}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
++    const-string v4, "\n密码："
++    invoke-virtual {v3, v4}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
++    invoke-virtual {v3, v2}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
++    invoke-virtual {v3}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
++    move-result-object v1
++    new-instance v0, Landroid/widget/TextView;
++    invoke-direct {v0, p0}, Landroid/widget/TextView;-><init>(Landroid/content/Context;)V
++    invoke-virtual {v0, v1}, Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V
++    const/high16 v1, 0x41600000
++    invoke-virtual {v0, v1}, Landroid/widget/TextView;->setTextSize(F)V
++    const v1, -0x1
++    invoke-virtual {v0, v1}, Landroid/widget/TextView;->setTextColor(I)V
++    invoke-virtual {p1, v0}, Landroid/widget/LinearLayout;->addView(Landroid/view/View;)V
++    return-void
++.end method
