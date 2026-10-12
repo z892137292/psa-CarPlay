@@ -45,7 +45,7 @@
 
 原 0001、0002、0003、0004 已在固定 commit 上 clean git am，未混入旧测试补丁。0004 保持原文件；新增 0005 只补充麦克风诊断、失败状态测试和自愿音源对比。0005 在仅应用前四个补丁的干净 worktree 上 git apply --check 通过。
 
-修改范围：MicrophoneUplink、输入源/状态辅助函数与测试、AndroidMediaSink 的输入配置传递、CarPlaySettings 的 audio_input_source 和声音页测试选项。没有修改包格式、加密、编码器、投屏、网络、热点或视频链路。
+修改范围：MicrophoneUplink、输入源/状态辅助函数与测试、AndroidMediaSink 的输入配置传递、CarPlaySettings 的 audio_input_source 和声音页测试选项。另外删除 OpusEncoder 原日志中的编码数据前 16 字节，仅保留长度；编码行为不变。没有修改包格式、加密、编码算法、投屏、网络、热点或视频链路。
 
 - 创建前记录请求 source、设备 type/id/address 和格式，避免创建失败丢失请求证据。
 - preferredDevice 的返回只代表偏好是否接受；实际使用设备以 routedDevice 为准。设置偏好的异常纳入清理路径。
@@ -53,7 +53,7 @@
 - read 记录返回值，负数保留原退出清理逻辑；没有新增无限重试或自动换源。
 - 每秒最多一次读取驱动的统计，并在首次读取、失败、结束时输出。pcmFrames 为每通道采样帧数，frameCount 为完成的输入块数；packetSend 仅在 socket.send 正常返回后累加，不能代表手机收到或语音有效。read 阻塞时不会凭空生成进度。
 - 记录 recordingState 与 routedDevice；null 显示 unavailable，不认定成功。
-- 删除原首包字节头输出，仅记录长度和计数；不新增声音、PCM、网络内容、账号或密钥日志。
+- 删除原上行首包字节头和 Opus 编码数据字节头输出，仅记录长度和计数；不新增声音、PCM、网络内容、账号或密钥日志。
 - auto 是默认且保持原映射。手动 mic / speechrecognition / voicecommunication 只对下一次创建的语音会话生效，不切换正在进行的 recorder，也不自动回退。
 
 已有恢复行为仍由 Android AudioRecord native restore 完成；Java 层在负数读取后退出，未新增 HAL 重置。状态检查修复启动误报，读取失败仍需单独观察。
