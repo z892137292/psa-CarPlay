@@ -1,0 +1,44 @@
+From 1111111111111111111111111111111111111111 Mon Sep 17 00:00:00 2001
+From: PSA Audio Review <psa-audio@users.noreply.github.com>
+Date: Mon, 12 Oct 2026 17:30:00 +0800
+Subject: [PATCH] Validate microphone recording state and report input routing
+
+Prevent AudioRecord.startRecording() failures from being misreported as
+a successful microphone uplink. Log preference and routed input device
+metadata without PCM or credentials. Preserve codecs, network, UI and
+existing AudioSource selection.
+
+---
+ shared/src/main/java/com/shilapi/xcertplay/media/MicrophoneUplink.kt | 15 +++++++++++++--
+ 1 file changed, 13 insertions(+), 2 deletions(-)
+
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/media/MicrophoneUplink.kt b/shared/src/main/java/com/shilapi/xcertplay/media/MicrophoneUplink.kt
+--- a/shared/src/main/java/com/shilapi/xcertplay/media/MicrophoneUplink.kt
++++ b/shared/src/main/java/com/shilapi/xcertplay/media/MicrophoneUplink.kt
+@@ -109,11 +109,22 @@
+             return false
+         }
+ 
+-        synchronized(this) { recorder = nextRecorder; if (!nextRecorder.setPreferredDevice(inputDevice)) Log.w(TAG, "Microphone input device preference rejected") }
++        synchronized(this) {
++            recorder = nextRecorder
++            val requested = inputDevice
++            val accepted = nextRecorder.setPreferredDevice(requested)
++            Log.i(TAG, "microphone input preference source=$source type=${requested?.type ?: -1} id=${requested?.id ?: -1} accepted=$accepted")
++            if (!accepted) Log.w(TAG, "Microphone input device preference rejected")
++        }
+         socket = nextSocket
+         opusEncoder = nextEncoder
+         return try {
+-            nextRecorder.startRecording()
++            nextRecorder.startRecording()
++            check(nextRecorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
++                "microphone did not enter RECORDSTATE_RECORDING source=$source audioType=${config.audioType}"
++            }
++            val routed = runCatching { nextRecorder.routedDevice }.getOrNull()
++            Log.i(TAG, "microphone recording confirmed source=$source routedType=${routed?.type ?: -1} routedId=${routed?.id ?: -1}")
+             thread = Thread({ capture(nextRecorder, nextSocket) }, "carplay-mic").apply {
+                 isDaemon = true
+                 start()
+-- 
+2.51.1
