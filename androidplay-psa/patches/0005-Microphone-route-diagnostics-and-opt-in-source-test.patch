@@ -1,0 +1,349 @@
+From ec6383d1424d448830f25f60f02345612426b67f Mon Sep 17 00:00:00 2001
+From: PSA Microphone Audit <psa-audio@users.noreply.github.com>
+Date: Mon, 12 Oct 2026 20:44:37 +0900
+Subject: [PATCH] Add microphone route diagnostics and opt-in source comparison
+
+---
+ .../shilapi/xcertplay/AndroidPlayActivity.kt  | 15 ++++
+ .../com/shilapi/xcertplay/CarPlaySettings.kt  |  6 ++
+ .../xcertplay/media/AndroidMediaSink.kt       |  7 +-
+ .../xcertplay/media/MicrophoneInputSource.kt  | 34 ++++++++
+ .../xcertplay/media/MicrophoneUplink.kt       | 80 ++++++++++++++-----
+ .../media/MicrophoneInputSourceTest.kt        | 40 ++++++++++
+ 6 files changed, 160 insertions(+), 22 deletions(-)
+ create mode 100644 shared/src/main/java/com/shilapi/xcertplay/media/MicrophoneInputSource.kt
+ create mode 100644 shared/src/test/java/com/shilapi/xcertplay/media/MicrophoneInputSourceTest.kt
+
+diff --git a/common/src/main/java/com/shilapi/xcertplay/AndroidPlayActivity.kt b/common/src/main/java/com/shilapi/xcertplay/AndroidPlayActivity.kt
+index 612ff0f..83d69f6 100644
+--- a/common/src/main/java/com/shilapi/xcertplay/AndroidPlayActivity.kt
++++ b/common/src/main/java/com/shilapi/xcertplay/AndroidPlayActivity.kt
+@@ -517,6 +517,21 @@ class AndroidPlayActivity : ComponentActivity() {
+             }
+             "sound" -> {
+                 row("输入设备", audioSelectionLabel(true)) { audioDeviceSettings(true) }
++                row("测试录音源", "${CarPlaySettings.audioInputSource(this)}（默认 auto；下个语音会话生效）") {
++                    val values = arrayOf("auto", "mic", "speechrecognition", "voicecommunication")
++                    val labels = arrayOf("auto：保持原会话逻辑", "MIC(1)：诊断测试", "VOICE_RECOGNITION(6)：诊断测试", "VOICE_COMMUNICATION(7)：诊断测试")
++                    android.app.AlertDialog.Builder(this)
++                        .setTitle("麦克风源对比：不代表已修复")
++                        .setSingleChoiceItems(labels, values.indexOf(CarPlaySettings.audioInputSource(this))) { dialog, index ->
++                            CarPlaySettings.saveAudioInputSource(this, values[index])
++                            CarPlaySettings.changed(this)
++                            CarPlayBackgroundSession.applySettings(this)
++                            dialog.dismiss()
++                            render()
++                        }
++                        .setNegativeButton("取消", null)
++                        .show()
++                }
+                 row("输出设备", audioSelectionLabel(false)) { audioDeviceSettings(false) }
+                 addVolumeCard(content, false)
+                 addVolumeCard(content, true)
+diff --git a/common/src/main/java/com/shilapi/xcertplay/CarPlaySettings.kt b/common/src/main/java/com/shilapi/xcertplay/CarPlaySettings.kt
+index a406518..91aab1d 100644
+--- a/common/src/main/java/com/shilapi/xcertplay/CarPlaySettings.kt
++++ b/common/src/main/java/com/shilapi/xcertplay/CarPlaySettings.kt
+@@ -31,7 +31,13 @@ internal object CarPlaySettings {
+         AudioDeviceInfo.TYPE_USB_DEVICE, AudioDeviceInfo.TYPE_USB_HEADSET -> "USB"
+         else -> "设备${device.id}"
+     }}）"
++    fun audioInputSource(context: Context): String = prefs(context).getString("audio_input_source", "auto") ?: "auto"
++    fun saveAudioInputSource(context: Context, value: String) {
++        require(value in setOf("auto", "mic", "speechrecognition", "voicecommunication"))
++        prefs(context).edit().putString("audio_input_source", value).apply()
++    }
+     fun applyAudio(context: Context, sink: AndroidMediaSink) {
++        sink.setMicrophoneInputSourceChoice(audioInputSource(context))
+         fun resolve(input: Boolean) = devices(context, input).firstOrNull { deviceKey(it) == selectedDevice(context, input) }
+         sink.setAudioDevices(resolve(true), resolve(false))
+     }
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/media/AndroidMediaSink.kt b/shared/src/main/java/com/shilapi/xcertplay/media/AndroidMediaSink.kt
+index 44d95ea..dafb794 100644
+--- a/shared/src/main/java/com/shilapi/xcertplay/media/AndroidMediaSink.kt
++++ b/shared/src/main/java/com/shilapi/xcertplay/media/AndroidMediaSink.kt
+@@ -42,6 +42,11 @@ class AndroidMediaSink(
+     private val mediaBufferMillis: Int = MediaAudioBuffer.DEFAULT_MILLIS,
+     private val onAudioDiagnostic: (String) -> Unit = {},
+ ) : MediaSink {
++    @Volatile private var microphoneInputSourceChoice: String? = null
++    /** Changes affect newly created microphone sessions only; AUTO is the unchanged default. */
++    fun setMicrophoneInputSourceChoice(choice: String?) {
++        microphoneInputSourceChoice = MicrophoneInputSource.normalize(choice)
++    }
+     @Volatile private var preferredInput: AudioDeviceInfo? = null
+     @Volatile private var preferredOutput: AudioDeviceInfo? = null
+     @Synchronized fun setAudioDevices(input: AudioDeviceInfo?, output: AudioDeviceInfo?) {
+@@ -142,7 +147,7 @@ class AndroidMediaSink(
+     }
+ 
+     override fun onMicrophoneStarted(type: Int, config: MicrophoneConfig) {
+-        val uplink = microphoneUplinks.computeIfAbsent(type) { MicrophoneUplink(config, preferredInput) }
++        val uplink = microphoneUplinks.computeIfAbsent(type) { MicrophoneUplink(config, preferredInput, microphoneInputSourceChoice) }
+         if (!uplink.start()) microphoneUplinks.remove(type, uplink)
+     }
+ 
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/media/MicrophoneInputSource.kt b/shared/src/main/java/com/shilapi/xcertplay/media/MicrophoneInputSource.kt
+new file mode 100644
+index 0000000..6a17478
+--- /dev/null
++++ b/shared/src/main/java/com/shilapi/xcertplay/media/MicrophoneInputSource.kt
+@@ -0,0 +1,34 @@
++package com.shilapi.xcertplay.media
++
++import java.util.Locale
++
++/** Optional diagnostic input choice. AUTO preserves the original per-session mapping. */
++internal object MicrophoneInputSource {
++    fun normalize(value: String?): String = when (value?.lowercase(Locale.ROOT)) {
++        "mic" -> "mic"
++        "speechrecognition" -> "speechrecognition"
++        "voicecommunication" -> "voicecommunication"
++        else -> "auto"
++    }
++
++    fun resolve(audioType: String, override: String? = null): Int = when (normalize(override)) {
++        "mic" -> 1
++        "speechrecognition" -> 6
++        "voicecommunication" -> 7
++        else -> when (audioType) {
++            "telephony" -> 7
++            "speechrecognition" -> 6
++            else -> 1
++        }
++    }
++}
++
++/** A void startRecording() call may return without entering RECORDING on API28. */
++internal object MicrophoneRecordingState {
++    fun startAndVerify(start: () -> Unit, state: () -> Int): Int {
++        start()
++        val actual = state()
++        check(actual == 3) { "microphone did not enter RECORDSTATE_RECORDING recordingState=$actual" }
++        return actual
++    }
++}
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/media/MicrophoneUplink.kt b/shared/src/main/java/com/shilapi/xcertplay/media/MicrophoneUplink.kt
+index a841a4e..e3a8695 100644
+--- a/shared/src/main/java/com/shilapi/xcertplay/media/MicrophoneUplink.kt
++++ b/shared/src/main/java/com/shilapi/xcertplay/media/MicrophoneUplink.kt
+@@ -3,18 +3,17 @@ package com.shilapi.xcertplay.media
+ import android.media.AudioFormat as AndroidAudioFormat
+ import android.media.AudioDeviceInfo
+ import android.media.AudioRecord
+-import android.media.MediaRecorder
+ import android.util.Log
+ import com.shilapi.xcertplay.airplay.AudioCodecKind
+ import com.shilapi.xcertplay.airplay.MicrophoneConfig
+ import com.shilapi.xcertplay.airplay.MicrophoneCounters
+ import com.shilapi.xcertplay.airplay.MicrophonePacketizer
+-import com.shilapi.xcertplay.airplay.toHexString
+ import java.io.Closeable
+ import java.net.DatagramPacket
+ import java.net.DatagramSocket
+ import java.net.InetAddress
+ import java.net.InetSocketAddress
++import java.util.concurrent.atomic.AtomicLong
+ import java.util.concurrent.atomic.AtomicBoolean
+ 
+ /**
+@@ -23,10 +22,14 @@ import java.util.concurrent.atomic.AtomicBoolean
+  * The recorder runs only while the matching audio stream is active, so callers start this after
+  * the first downlink audio packet and close it on stream teardown.
+  */
+-internal class MicrophoneUplink(private val config: MicrophoneConfig, @Volatile private var inputDevice: AudioDeviceInfo? = null) : Closeable {
++internal class MicrophoneUplink(private val config: MicrophoneConfig, @Volatile private var inputDevice: AudioDeviceInfo? = null, private val inputSourceChoice: String? = null) : Closeable {
+     @Synchronized fun setInputDevice(device: AudioDeviceInfo?) {
+         inputDevice = device
+-        recorder?.let { if (!it.setPreferredDevice(device)) Log.w(TAG, "Microphone input device preference rejected") }
++        recorder?.let {
++            val accepted = it.setPreferredDevice(device)
++            Log.i(TAG, "microphone preference changed requestedDevice=${deviceSummary(device)} accepted=$accepted")
++            if (!accepted) Log.w(TAG, "Microphone input device preference rejected")
++        }
+     }
+     private val running = AtomicBoolean(false)
+     private val firstPacketLogged = AtomicBoolean(false)
+@@ -34,6 +37,29 @@ internal class MicrophoneUplink(private val config: MicrophoneConfig, @Volatile
+     @Volatile private var socket: DatagramSocket? = null
+     @Volatile private var opusEncoder: OpusEncoder? = null
+     private var thread: Thread? = null
++    private val readCalls = AtomicLong()
++    private val pcmFrames = AtomicLong()
++    private val frameCount = AtomicLong()
++    private val packetsSent = AtomicLong()
++    private var lastReadResult: Int? = null
++    private var lastStatsNs = 0L
++
++    private fun deviceSummary(device: AudioDeviceInfo?): String = if (device == null) {
++        "system_default_or_unavailable"
++    } else {
++        "id=${device.id},type=${device.type},address=${device.address}"
++    }
++
++    private fun captureStats(current: AudioRecord, readResult: Int?, force: Boolean = false) {
++        val now = System.nanoTime()
++        if (!force && now - lastStatsNs < 1_000_000_000L) return
++        lastStatsNs = now
++        val state = runCatching { current.recordingState }.getOrDefault(-1)
++        val routed = runCatching { current.routedDevice }.getOrNull()
++        Log.i(TAG, "microphone stats epochMs=${System.currentTimeMillis()} readResult=${readResult ?: "not_read"} " +
++            "readCalls=${readCalls.get()} pcmFrames=${pcmFrames.get()} frameCount=${frameCount.get()} " +
++            "packetSend=${packetsSent.get()} recordingState=$state routedDevice=${deviceSummary(routed)}")
++    }
+ 
+     fun start(): Boolean {
+         if (!running.compareAndSet(false, true)) return true
+@@ -54,11 +80,9 @@ internal class MicrophoneUplink(private val config: MicrophoneConfig, @Volatile
+             return false
+         }
+ 
+-        val source = when (config.audioType) {
+-            "telephony" -> MediaRecorder.AudioSource.VOICE_COMMUNICATION
+-            "speechrecognition" -> MediaRecorder.AudioSource.VOICE_RECOGNITION
+-            else -> MediaRecorder.AudioSource.MIC
+-        }
++        val source = MicrophoneInputSource.resolve(config.audioType, inputSourceChoice)
++        Log.i(TAG, "microphone creation audioType=${config.audioType} requestedSource=$source " +
++            "requestedDevice=${deviceSummary(inputDevice)} rate=${config.sampleRate} channels=${config.channels}")
+         val nextEncoder = if (config.codec == AudioCodecKind.OPUS) {
+             OpusEncoder(config.bitrate ?: 48_000).takeIf { it.available }
+         } else {
+@@ -109,22 +133,29 @@ internal class MicrophoneUplink(private val config: MicrophoneConfig, @Volatile
+             return false
+         }
+ 
+-        synchronized(this) {
+-            recorder = nextRecorder
+-            val requested = inputDevice
+-            val accepted = nextRecorder.setPreferredDevice(requested)
+-            Log.i(TAG, "microphone input preference source=$source type=${requested?.type ?: -1} id=${requested?.id ?: -1} accepted=$accepted")
+-            if (!accepted) Log.w(TAG, "Microphone input device preference rejected")
+-        }
++        recorder = nextRecorder
+         socket = nextSocket
+         opusEncoder = nextEncoder
++        readCalls.set(0)
++        pcmFrames.set(0)
++        frameCount.set(0)
++        packetsSent.set(0)
++        firstPacketLogged.set(false)
++        lastReadResult = null
++        lastStatsNs = 0L
+         return try {
+-            nextRecorder.startRecording()
+-            check(nextRecorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+-                "microphone did not enter RECORDSTATE_RECORDING source=$source audioType=${config.audioType}"
++            synchronized(this) {
++                val requested = inputDevice
++                val accepted = nextRecorder.setPreferredDevice(requested)
++                Log.i(TAG, "microphone request audioType=${config.audioType} sourceChoice=${MicrophoneInputSource.normalize(inputSourceChoice)} " +
++                    "requestedSource=$source requestedDevice=${deviceSummary(requested)} preferenceAccepted=$accepted")
++                if (!accepted) Log.w(TAG, "Microphone input device preference rejected")
+             }
++            val state = MicrophoneRecordingState.startAndVerify(
++                { nextRecorder.startRecording() }, { nextRecorder.recordingState },
++            )
+             val routed = runCatching { nextRecorder.routedDevice }.getOrNull()
+-            Log.i(TAG, "microphone recording confirmed source=$source routedType=${routed?.type ?: -1} routedId=${routed?.id ?: -1}")
++            Log.i(TAG, "microphone recording confirmed source=$source recordingState=$state routedDevice=${deviceSummary(routed)}")
+             thread = Thread({ capture(nextRecorder, nextSocket) }, "carplay-mic").apply {
+                 isDaemon = true
+                 start()
+@@ -138,6 +169,7 @@ internal class MicrophoneUplink(private val config: MicrophoneConfig, @Volatile
+             true
+         } catch (error: Exception) {
+             Log.e(TAG, "microphone recording failed", error)
++            captureStats(nextRecorder, null, force = true)
+             release()
+             false
+         }
+@@ -151,6 +183,10 @@ internal class MicrophoneUplink(private val config: MicrophoneConfig, @Volatile
+         try {
+             while (running.get()) {
+                 val count = recorder.read(readBuffer, 0, readBuffer.size, AudioRecord.READ_BLOCKING)
++                lastReadResult = count
++                readCalls.incrementAndGet()
++                if (count > 0) pcmFrames.addAndGet(count.toLong() / (config.channels * 2))
++                captureStats(recorder, count, force = count < 0 || readCalls.get() == 1L)
+                 if (count < 0) {
+                     if (running.get()) Log.e(TAG, "microphone read failed code=$count")
+                     return
+@@ -165,6 +201,7 @@ internal class MicrophoneUplink(private val config: MicrophoneConfig, @Volatile
+                     filled += copied
+                     offset += copied
+                     if (filled == frame.size) {
++                        frameCount.incrementAndGet()
+                         sendFrame(socket, counters, frame)
+                         filled = 0
+                     }
+@@ -173,6 +210,7 @@ internal class MicrophoneUplink(private val config: MicrophoneConfig, @Volatile
+         } catch (error: Exception) {
+             if (running.get()) Log.e(TAG, "microphone capture failed", error)
+         } finally {
++            captureStats(recorder, lastReadResult, force = true)
+             running.set(false)
+             release()
+         }
+@@ -209,11 +247,11 @@ internal class MicrophoneUplink(private val config: MicrophoneConfig, @Volatile
+         )
+         try {
+             socket.send(DatagramPacket(packet, packet.size, config.host, config.port))
++            packetsSent.incrementAndGet()
+             if (firstPacketLogged.compareAndSet(false, true)) {
+                 Log.i(
+                     TAG,
+                     "microphone first packet bytes=${packet.size} body=${body.size} " +
+-                        "head=${packet.copyOf(minOf(packet.size, 16)).toHexString()} " +
+                         "port=${config.port}",
+                 )
+             }
+diff --git a/shared/src/test/java/com/shilapi/xcertplay/media/MicrophoneInputSourceTest.kt b/shared/src/test/java/com/shilapi/xcertplay/media/MicrophoneInputSourceTest.kt
+new file mode 100644
+index 0000000..fac1229
+--- /dev/null
++++ b/shared/src/test/java/com/shilapi/xcertplay/media/MicrophoneInputSourceTest.kt
+@@ -0,0 +1,40 @@
++package com.shilapi.xcertplay.media
++
++import org.junit.Assert.*
++import org.junit.Test
++
++class MicrophoneInputSourceTest {
++    @Test fun defaultAndUnknownChoicesPreserveEverySessionSource() {
++        for (choice in listOf(null, "auto", "invalid")) {
++            assertEquals(7, MicrophoneInputSource.resolve("telephony", choice))
++            assertEquals(6, MicrophoneInputSource.resolve("speechrecognition", choice))
++            assertEquals(1, MicrophoneInputSource.resolve("default", choice))
++        }
++    }
++    @Test fun explicitChoicesAreOptInAndIndependentOfSessionType() {
++        for (type in listOf("telephony", "speechrecognition", "default")) {
++            assertEquals(1, MicrophoneInputSource.resolve(type, "mic"))
++            assertEquals(6, MicrophoneInputSource.resolve(type, "speechrecognition"))
++            assertEquals(7, MicrophoneInputSource.resolve(type, "voicecommunication"))
++        }
++    }
++    @Test fun nativeFailureWithoutExceptionCannotPassStartupGate() {
++        var starts = 0
++        var successPublished = false
++        try {
++            MicrophoneRecordingState.startAndVerify({ starts++ }, { 1 })
++            successPublished = true
++            fail("STOPPED must fail even when the native start wrapper did not throw")
++        } catch (_: IllegalStateException) { }
++        assertEquals(1, starts)
++        assertFalse(successPublished)
++    }
++    @Test fun recordingStatePassesAndStartExceptionPropagates() {
++        assertEquals(3, MicrophoneRecordingState.startAndVerify({}, { 3 }))
++        val error = IllegalStateException("native start exception")
++        try {
++            MicrophoneRecordingState.startAndVerify({ throw error }, { 3 })
++            fail("start failure must propagate")
++        } catch (actual: IllegalStateException) { assertSame(error, actual) }
++    }
++}
+-- 
+2.51.1
+
