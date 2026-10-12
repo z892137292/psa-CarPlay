@@ -1,4 +1,4 @@
-From ec6383d1424d448830f25f60f02345612426b67f Mon Sep 17 00:00:00 2001
+From 3bd3bd2a8f093410a182dd1dbdd0d2998a8f9ec6 Mon Sep 17 00:00:00 2001
 From: PSA Microphone Audit <psa-audio@users.noreply.github.com>
 Date: Mon, 12 Oct 2026 20:44:37 +0900
 Subject: [PATCH] Add microphone route diagnostics and opt-in source comparison
@@ -9,8 +9,9 @@ Subject: [PATCH] Add microphone route diagnostics and opt-in source comparison
  .../xcertplay/media/AndroidMediaSink.kt       |  7 +-
  .../xcertplay/media/MicrophoneInputSource.kt  | 34 ++++++++
  .../xcertplay/media/MicrophoneUplink.kt       | 80 ++++++++++++++-----
+ .../shilapi/xcertplay/media/OpusEncoder.kt    |  3 +-
  .../media/MicrophoneInputSourceTest.kt        | 40 ++++++++++
- 6 files changed, 160 insertions(+), 22 deletions(-)
+ 7 files changed, 161 insertions(+), 24 deletions(-)
  create mode 100644 shared/src/main/java/com/shilapi/xcertplay/media/MicrophoneInputSource.kt
  create mode 100644 shared/src/test/java/com/shilapi/xcertplay/media/MicrophoneInputSourceTest.kt
 
@@ -298,6 +299,20 @@ index a841a4e..e3a8695 100644
                          "port=${config.port}",
                  )
              }
+diff --git a/shared/src/main/java/com/shilapi/xcertplay/media/OpusEncoder.kt b/shared/src/main/java/com/shilapi/xcertplay/media/OpusEncoder.kt
+index 43b42a3..f508f67 100644
+--- a/shared/src/main/java/com/shilapi/xcertplay/media/OpusEncoder.kt
++++ b/shared/src/main/java/com/shilapi/xcertplay/media/OpusEncoder.kt
+@@ -101,8 +101,7 @@ internal class OpusEncoder(bitrate: Int) : Closeable {
+                         if (outputPackets <= FIRST_PACKET_LOG_COUNT) {
+                             Log.i(
+                                 TAG,
+-                                "Opus microphone packet=$outputPackets bytes=${bytes.size} " +
+-                                    "head=${bytes.copyOf(minOf(bytes.size, 16)).toHexString()}",
++                                "Opus microphone packet=$outputPackets bytes=${bytes.size}",
+                             )
+                         }
+                     }
 diff --git a/shared/src/test/java/com/shilapi/xcertplay/media/MicrophoneInputSourceTest.kt b/shared/src/test/java/com/shilapi/xcertplay/media/MicrophoneInputSourceTest.kt
 new file mode 100644
 index 0000000..fac1229
