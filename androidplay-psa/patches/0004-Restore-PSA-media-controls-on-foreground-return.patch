@@ -1,0 +1,426 @@
+From 770104bf0bf60e7a812d113670f2a19e1b6dbc96 Mon Sep 17 00:00:00 2001
+From: PSA Build <psa-build@users.noreply.github.com>
+Date: Tue, 13 Oct 2026 05:41:07 -0500
+Subject: [PATCH] Restore PSA media controls on foreground return
+
+---
+ common/src/main/AndroidManifest.xml           |   2 +
+ .../AndroidPlayMediaButtonReceiver.kt         |  18 +++
+ .../xcertplay/AndroidPlayMediaSession.kt      | 106 +++++++++++++++++-
+ .../shilapi/xcertplay/CarPlayHostActivity.kt  |  10 ++
+ .../com/shilapi/xcertplay/MediaKeyGate.kt     |  28 +++++
+ .../xcertplay/MediaControlOwnershipTest.kt    |  84 ++++++++++++++
+ .../com/shilapi/xcertplay/MediaKeyGateTest.kt |  35 ++++++
+ 7 files changed, 278 insertions(+), 5 deletions(-)
+ create mode 100644 common/src/main/java/com/shilapi/xcertplay/AndroidPlayMediaButtonReceiver.kt
+ create mode 100644 common/src/main/java/com/shilapi/xcertplay/MediaKeyGate.kt
+ create mode 100644 common/src/test/java/com/shilapi/xcertplay/MediaControlOwnershipTest.kt
+ create mode 100644 common/src/test/java/com/shilapi/xcertplay/MediaKeyGateTest.kt
+
+diff --git a/common/src/main/AndroidManifest.xml b/common/src/main/AndroidManifest.xml
+index 42b8329..dd0d283 100644
+--- a/common/src/main/AndroidManifest.xml
++++ b/common/src/main/AndroidManifest.xml
+@@ -7,6 +7,8 @@
+     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+     <application>
++        <receiver android:name="com.shilapi.xcertplay.AndroidPlayMediaButtonReceiver"
++            android:exported="false" />
+         <activity android:name="com.shilapi.xcertplay.AndroidPlayActivity"
+             android:exported="true" android:launchMode="singleTop"
+             android:screenOrientation="fullSensor" android:resizeableActivity="false"
+diff --git a/common/src/main/java/com/shilapi/xcertplay/AndroidPlayMediaButtonReceiver.kt b/common/src/main/java/com/shilapi/xcertplay/AndroidPlayMediaButtonReceiver.kt
+new file mode 100644
+index 0000000..6e6b60a
+--- /dev/null
++++ b/common/src/main/java/com/shilapi/xcertplay/AndroidPlayMediaButtonReceiver.kt
+@@ -0,0 +1,18 @@
++// SPDX-License-Identifier: AGPL-3.0-only
++package com.shilapi.xcertplay
++
++import android.content.BroadcastReceiver
++import android.content.Context
++import android.content.Intent
++import android.util.Log
++import android.view.KeyEvent
++
++/** Explicit session PendingIntent only; it never creates a connection or listens globally. */
++class AndroidPlayMediaButtonReceiver : BroadcastReceiver() {
++    override fun onReceive(context: Context, intent: Intent) {
++        if (intent.action != Intent.ACTION_MEDIA_BUTTON) return
++        @Suppress("DEPRECATION") val event = intent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT) ?: return
++        Log.i("PSA-MEDIA", "receiver code=${event.keyCode} action=${event.action}")
++        CarPlayBackgroundSession.receiveMediaButton(event)
++    }
++}
+diff --git a/common/src/main/java/com/shilapi/xcertplay/AndroidPlayMediaSession.kt b/common/src/main/java/com/shilapi/xcertplay/AndroidPlayMediaSession.kt
+index a8a4a7c..b7e6305 100644
+--- a/common/src/main/java/com/shilapi/xcertplay/AndroidPlayMediaSession.kt
++++ b/common/src/main/java/com/shilapi/xcertplay/AndroidPlayMediaSession.kt
+@@ -8,12 +8,17 @@ import android.content.Intent
+ import android.graphics.Bitmap
+ import android.graphics.BitmapFactory
+ import android.media.AudioAttributes
++import android.media.AudioFocusRequest
++import android.media.AudioManager
+ import android.media.MediaMetadata
+ import android.media.session.MediaSession
+ import android.media.session.PlaybackState
++import android.os.Build
+ import android.os.Handler
+ import android.os.Looper
+ import android.os.SystemClock
++import android.util.Log
++import android.view.KeyEvent
+ import com.shilapi.xcertplay.host.R
+ import com.shilapi.xcertplay.media.CarPlayNowPlaying
+ import java.util.concurrent.Executors
+@@ -31,6 +36,81 @@ internal class AndroidPlayMediaSession(private val context: Context, private val
+     private var publishedMetadata: MediaMetadata? = null
+     private var publishedBitmap: Bitmap? = null
+     private var publishedTrackRevision = -1L
++    private val audioManager = context.getSystemService(AudioManager::class.java)
++    private var foreground = false
++    private var restorePending = false
++    private var ownsFocus = false
++    private var suspended = false
++    private val keys = MediaKeyGate()
++    private val focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
++        .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
++            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
++        .setOnAudioFocusChangeListener({ change ->
++            if (!closed) {
++                Log.i(TAG, "focus change=$change foreground=$foreground")
++                when (change) {
++                    AudioManager.AUDIOFOCUS_LOSS -> {
++                        suspended = true
++                        restorePending = false
++                        ownsFocus = false
++                        session.isActive = false
++                        abandonFocus()
++                    }
++                    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
++                    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
++                        suspended = true
++                        session.isActive = false
++                    }
++                    AudioManager.AUDIOFOCUS_GAIN -> if (ownsFocus) {
++                        suspended = false
++                        session.isActive = value.title.isNotEmpty() || value.playing
++                        publishPlaybackState()
++                    }
++                }
++            }
++        }, handler).build()
++
++    /** One attempt on an explicit foreground transition; metadata cannot steal focus back. */
++    fun setForeground(visible: Boolean) = handler.post {
++        if (closed || foreground == visible) return@post
++        foreground = visible
++        if (visible) {
++            restorePending = true
++            restoreMediaControl()
++        }
++    }
++
++    private fun abandonFocus() {
++        audioManager.abandonAudioFocusRequest(focusRequest)
++    }
++
++    private fun restoreMediaControl() {
++        if (!restorePending || !foreground || (value.title.isEmpty() && !value.playing)) return
++        restorePending = false
++        val result = audioManager.requestAudioFocus(focusRequest)
++        ownsFocus = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
++        suspended = !ownsFocus
++        session.isActive = ownsFocus
++        publishPlaybackState()
++        Log.i(TAG, "restore focusResult=$result active=${session.isActive} target=unobservable-use-dumpsys")
++    }
++
++    private fun dispatch(code: Int, source: String) {
++        if (closed || suspended || !session.isActive) {
++            Log.i(TAG, "command dropped source=$source code=$code active=${session.isActive} suspended=$suspended")
++            return
++        }
++        Log.i(TAG, "callback source=$source code=$code dispatch=existing-controller phoneAck=unknown")
++        mediaCommand(code)
++    }
++
++    fun receiveMediaButton(event: KeyEvent): Boolean {
++        if (!keys.supports(event.keyCode)) return false
++        Log.i(TAG, "key code=${event.keyCode} action=${event.action} repeat=${event.repeatCount} active=${session.isActive}")
++        keys.command(event.keyCode, event.action, event.repeatCount, event.downTime, event.deviceId, value.playing)
++            ?.let { dispatch(it, "media-button") }
++        return true
++    }
+     private val progressTicker = object : Runnable {
+         override fun run() {
+             if (closed || !value.playing || value.durationMillis <= 0) return
+@@ -39,13 +119,24 @@ internal class AndroidPlayMediaSession(private val context: Context, private val
+         }
+     }
+     private val session = MediaSession(context, "AndroidPlay").apply {
++        @Suppress("DEPRECATION")
++        setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS or MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS)
++        val mutable = if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0
++        @Suppress("DEPRECATION")
++        setMediaButtonReceiver(PendingIntent.getBroadcast(context, 11,
++            Intent(context, AndroidPlayMediaButtonReceiver::class.java).setAction(Intent.ACTION_MEDIA_BUTTON),
++            PendingIntent.FLAG_UPDATE_CURRENT or mutable))
+         setPlaybackToLocal(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
+         setSessionActivity(PendingIntent.getActivity(context, 10, Intent(context, CarPlayHostActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+         setCallback(object : MediaSession.Callback() {
+-            override fun onPlay() = mediaCommand(1)
+-            override fun onPause() = mediaCommand(2)
+-            override fun onSkipToNext() = mediaCommand(4)
+-            override fun onSkipToPrevious() = mediaCommand(5)
++            override fun onMediaButtonEvent(intent: Intent): Boolean {
++                @Suppress("DEPRECATION") val event = intent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT)
++                return if (intent.action == Intent.ACTION_MEDIA_BUTTON && event != null) receiveMediaButton(event) else false
++            }
++            override fun onPlay() = dispatch(1, "onPlay")
++            override fun onPause() = dispatch(2, "onPause")
++            override fun onSkipToNext() = dispatch(4, "onNext")
++            override fun onSkipToPrevious() = dispatch(5, "onPrevious")
+             override fun onSeekTo(pos: Long) { if (value.canSeek && value.durationMillis > 0) seekCommand(pos.coerceIn(0, value.durationMillis)) }
+             override fun onStop() = disconnect()
+         }, handler)
+@@ -54,7 +145,8 @@ internal class AndroidPlayMediaSession(private val context: Context, private val
+     fun update(next: CarPlayNowPlaying) = handler.post {
+         if (closed || next.revision < value.revision) return@post
+         value = next
+-        session.isActive = next.title.isNotEmpty()
++        session.isActive = !suspended && (next.title.isNotEmpty() || next.playing)
++        restoreMediaControl()
+         if (artworkBytes !== next.artwork && !(artworkBytes?.contentEquals(next.artwork ?: byteArrayOf()) ?: (next.artwork == null))) {
+             artworkBytes = next.artwork
+             // Keep the current cover while its replacement decodes, unless the track changed.
+@@ -139,6 +231,9 @@ internal class AndroidPlayMediaSession(private val context: Context, private val
+ 
+     override fun close() {
+         closed = true
++        if (ownsFocus) abandonFocus()
++        ownsFocus = false
++        keys.reset()
+         handler.removeCallbacks(progressTicker)
+         artworkGeneration.incrementAndGet()
+         decoder.shutdownNow()
+@@ -149,6 +244,7 @@ internal class AndroidPlayMediaSession(private val context: Context, private val
+         bitmap = null; artworkBytes = null
+     }
+     companion object {
++        private const val TAG = "PSA-MEDIA"
+         private fun decodeArtwork(bytes: ByteArray): Bitmap? = runCatching {
+             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+             BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+diff --git a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt b/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
+index 03d725d..01a5a95 100644
+--- a/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
++++ b/common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt
+@@ -419,12 +419,14 @@ class CarPlayHostActivity : ComponentActivity() {
+         }
+     }
+     override fun onPause() {
++        CarPlayBackgroundSession.setMediaForeground(this, false)
+         appendLog("DISPLAY activity paused generation=$restartGeneration surfaceValid=${currentSurface?.isValid}")
+         mainHandler.removeCallbacks(hotspotWarningTick)
+         super.onPause()
+     }
+     override fun onResume() {
+         super.onResume()
++        CarPlayBackgroundSession.setMediaForeground(this, true)
+         appendLog("DISPLAY activity resumed generation=$restartGeneration surfaceValid=${currentSurface?.isValid}")
+         mainHandler.removeCallbacks(hotspotWarningTick)
+         mainHandler.post(hotspotWarningTick)
+@@ -1274,6 +1276,12 @@ internal object CarPlayBackgroundSession {
+ 
+     private var systemMedia: AndroidPlayMediaSession? = null
+     private var audioWatcher: CarPlayAudioDeviceWatcher? = null
++    @Synchronized fun setMediaForeground(candidate: Any, visible: Boolean) {
++        if (owner === candidate) systemMedia?.setForeground(visible)
++    }
++    @Synchronized fun receiveMediaButton(event: android.view.KeyEvent) {
++        systemMedia?.receiveMediaButton(event)
++    }
+     fun publishNowPlaying(value: com.shilapi.xcertplay.media.CarPlayNowPlaying) { systemMedia?.update(value) }
+     fun decorateNotification(builder: android.app.Notification.Builder): android.app.Notification.Builder = systemMedia?.decorate(builder) ?: builder
+     fun applySettings(context: android.content.Context) {
+@@ -1299,6 +1307,8 @@ internal object CarPlayBackgroundSession {
+             audioWatcher?.close()
+             val context = (owner as android.content.Context).applicationContext
+             systemMedia = AndroidPlayMediaSession(context, controller::sendMedia, controller::seekTo) { stop() }
++            systemMedia?.setForeground((owner as? androidx.lifecycle.LifecycleOwner)?.lifecycle?.currentState
++                ?.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED) == true)
+             audioWatcher = CarPlayAudioDeviceWatcher(context, sink)
+         }
+         settingsRevision = CarPlaySettings.revision(owner as android.content.Context)
+diff --git a/common/src/main/java/com/shilapi/xcertplay/MediaKeyGate.kt b/common/src/main/java/com/shilapi/xcertplay/MediaKeyGate.kt
+new file mode 100644
+index 0000000..645f110
+--- /dev/null
++++ b/common/src/main/java/com/shilapi/xcertplay/MediaKeyGate.kt
+@@ -0,0 +1,28 @@
++// SPDX-License-Identifier: AGPL-3.0-only
++package com.shilapi.xcertplay
++
++/** Deduplicates one physical DOWN delivered through both receiver and session callback. */
++internal class MediaKeyGate {
++    private data class Press(val key: Int, val downTime: Long, val device: Int)
++    private var last: Press? = null
++
++    fun supports(key: Int) = key in listOf(85, 87, 88, 126, 127)
++
++    fun command(key: Int, action: Int, repeat: Int, downTime: Long, device: Int, playing: Boolean): Int? {
++        if (!supports(key) || action != KeyEventActionDown || repeat != 0) return null
++        val press = Press(key, downTime, device)
++        if (last == press) return null
++        last = press
++        return when (key) {
++            87 -> 4
++            88 -> 5
++            126 -> 1
++            127 -> 2
++            else -> if (playing) 2 else 1
++        }
++    }
++
++    fun reset() { last = null }
++
++    private companion object { const val KeyEventActionDown = 0 }
++}
+diff --git a/common/src/test/java/com/shilapi/xcertplay/MediaControlOwnershipTest.kt b/common/src/test/java/com/shilapi/xcertplay/MediaControlOwnershipTest.kt
+new file mode 100644
+index 0000000..27aad9b
+--- /dev/null
++++ b/common/src/test/java/com/shilapi/xcertplay/MediaControlOwnershipTest.kt
+@@ -0,0 +1,84 @@
++package com.shilapi.xcertplay
++
++import android.media.AudioManager
++import android.media.session.MediaSession
++import android.os.Looper
++import android.view.KeyEvent
++import com.shilapi.xcertplay.media.CarPlayNowPlaying
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertNotNull
++import org.junit.Assert.assertSame
++import org.junit.Assert.assertTrue
++import org.junit.Test
++import org.junit.runner.RunWith
++import org.robolectric.RobolectricTestRunner
++import org.robolectric.RuntimeEnvironment
++import org.robolectric.Shadows.shadowOf
++import org.robolectric.annotation.Config
++import org.robolectric.shadow.api.Shadow
++import org.robolectric.util.ReflectionHelpers
++
++@RunWith(RobolectricTestRunner::class)
++@Config(sdk = [28], manifest = Config.NONE, shadows = [RecordingMediaSession::class])
++class MediaControlOwnershipTest {
++    private fun idle() = shadowOf(Looper.getMainLooper()).idle()
++
++    @Test fun tenReversibleTransitionsDoNotReclaimOnMetadataOrRepeatResume() {
++        val context = RuntimeEnvironment.getApplication()
++        val audio = shadowOf(context.getSystemService(AudioManager::class.java))
++        audio.setNextFocusRequestResponse(AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
++        val commands = mutableListOf<Int>()
++        val publisher = AndroidPlayMediaSession(context, { commands += it }, {}, {})
++        publisher.setForeground(true)
++        publisher.update(CarPlayNowPlaying(revision = 1, title = "Song", playing = true))
++        idle()
++        val platform = ReflectionHelpers.getField<MediaSession>(publisher, "session")
++        repeat(10) { turn ->
++            assertTrue(platform.isActive)
++            publisher.setForeground(false)
++            idle()
++            audio.lastAudioFocusRequest.listener.onAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS)
++            assertFalse(platform.isActive)
++            publisher.update(CarPlayNowPlaying(revision = (turn + 2).toLong(), title = "Song", playing = true))
++            idle()
++            assertFalse(platform.isActive)
++            publisher.setForeground(true)
++            idle()
++            assertTrue(platform.isActive)
++            val request = audio.lastAudioFocusRequest
++            publisher.setForeground(true)
++            idle()
++            assertSame(request, audio.lastAudioFocusRequest)
++            val time = 100L + turn
++            publisher.receiveMediaButton(KeyEvent(time, time, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_NEXT, 0))
++            publisher.receiveMediaButton(KeyEvent(time, time, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_NEXT, 0))
++        }
++        assertEquals(List(10) { 4 }, commands)
++        publisher.close()
++        assertFalse(platform.isActive)
++        assertNotNull(audio.lastAbandonedAudioFocusRequest)
++    }
++
++    @Test fun focusDenialDoesNotRetryOnMetadataOrForwardCallbacks() {
++        val context = RuntimeEnvironment.getApplication()
++        val audio = shadowOf(context.getSystemService(AudioManager::class.java))
++        audio.setNextFocusRequestResponse(AudioManager.AUDIOFOCUS_REQUEST_FAILED)
++        val commands = mutableListOf<Int>()
++        val publisher = AndroidPlayMediaSession(context, { commands += it }, {}, {})
++        publisher.setForeground(true)
++        publisher.update(CarPlayNowPlaying(revision = 1, title = "Song", playing = true))
++        idle()
++        val platform = ReflectionHelpers.getField<MediaSession>(publisher, "session")
++        val callback = Shadow.extract<RecordingMediaSession>(platform).callback!!
++        assertFalse(platform.isActive)
++        val request = audio.lastAudioFocusRequest
++        publisher.update(CarPlayNowPlaying(revision = 2, title = "Song", playing = true))
++        idle()
++        assertSame(request, audio.lastAudioFocusRequest)
++        callback.onPause()
++        publisher.close()
++        callback.onSkipToPrevious()
++        assertTrue(commands.isEmpty())
++    }
++}
+diff --git a/common/src/test/java/com/shilapi/xcertplay/MediaKeyGateTest.kt b/common/src/test/java/com/shilapi/xcertplay/MediaKeyGateTest.kt
+new file mode 100644
+index 0000000..21a91c6
+--- /dev/null
++++ b/common/src/test/java/com/shilapi/xcertplay/MediaKeyGateTest.kt
+@@ -0,0 +1,35 @@
++package com.shilapi.xcertplay
++
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertNull
++import org.junit.Test
++
++class MediaKeyGateTest {
++    @Test fun duplicateDeliveryAndKeyRepeatProduceOneCommand() {
++        val keys = MediaKeyGate()
++        assertEquals(4, keys.command(87, 0, 0, 100, 1, true))
++        assertNull(keys.command(87, 0, 0, 100, 1, true))
++        assertNull(keys.command(87, 0, 1, 100, 1, true))
++        assertNull(keys.command(87, 1, 0, 100, 1, true))
++        assertEquals(4, keys.command(87, 0, 0, 101, 1, true))
++    }
++
++    @Test fun publicMediaKeysMapToExistingPhoneCommands() {
++        val keys = MediaKeyGate()
++        assertEquals(5, keys.command(88, 0, 0, 1, 1, true))
++        assertEquals(1, keys.command(126, 0, 0, 2, 1, false))
++        assertEquals(2, keys.command(127, 0, 0, 3, 1, true))
++        assertEquals(2, keys.command(85, 0, 0, 4, 1, true))
++        assertEquals(1, keys.command(85, 0, 0, 5, 1, false))
++        assertFalse(keys.supports(26))
++        assertNull(keys.command(26, 0, 0, 6, 1, true))
++    }
++
++    @Test fun reconnectResetsDeduplication() {
++        val keys = MediaKeyGate()
++        assertEquals(4, keys.command(87, 0, 0, 1, 1, true))
++        keys.reset()
++        assertEquals(4, keys.command(87, 0, 0, 1, 1, true))
++    }
++}
+-- 
+2.51.1
+
