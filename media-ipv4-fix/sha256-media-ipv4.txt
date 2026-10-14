@@ -1,0 +1,2 @@
+6e5f6c0ab10d16c2abaef6d00eda0e7c0a76d78c7eef55c942e8a0338ce83d5e  AndroidPlay-1.2.0.apk
+968c4c2bf8aa9187ae4cd619cb59c4eaf1e4792f0ba002d773cebdf38ca2c311  AndroidPlay-1.2.0-media-ipv4-fix-test.apk

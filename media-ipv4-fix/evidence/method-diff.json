@@ -1,0 +1,62 @@
+{
+  "classes3.dex": {
+    "original_method_count": 1450,
+    "changed": [
+      [
+        "com/shilapi/xcertplay/AndroidPlayMediaSession.smali",
+        "public constructor <init>(Landroid/content/Context;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;)V"
+      ],
+      [
+        "com/shilapi/xcertplay/AndroidPlayMediaSession.smali",
+        "static final update$lambda$3(Lcom/shilapi/xcertplay/AndroidPlayMediaSession;Lcom/shilapi/xcertplay/media/CarPlayNowPlaying;)V"
+      ],
+      [
+        "com/shilapi/xcertplay/AndroidPlayMediaSession.smali",
+        "public close()V"
+      ],
+      [
+        "com/shilapi/xcertplay/CarPlayHostActivity.smali",
+        "protected onPause()V"
+      ],
+      [
+        "com/shilapi/xcertplay/CarPlayHostActivity.smali",
+        "protected onResume()V"
+      ],
+      [
+        "com/shilapi/xcertplay/CarPlayBackgroundSession.smali",
+        "public final declared-synchronized store(Lcom/shilapi/xcertplay/orchestration/CarPlayController;Lcom/shilapi/xcertplay/media/AndroidMediaSink;IILjava/lang/Object;Lkotlin/jvm/functions/Function1;)V"
+      ]
+    ],
+    "added": [
+      [
+        "com/shilapi/xcertplay/AndroidPlayMediaSession.smali",
+        "public final psaSetForeground(Z)V"
+      ],
+      [
+        "com/shilapi/xcertplay/CarPlayBackgroundSession.smali",
+        "public final declared-synchronized psaSetMediaForeground(Ljava/lang/Object;Z)V"
+      ]
+    ],
+    "new_classes": [
+      "com/shilapi/xcertplay/PsaMediaControl.smali",
+      "com/shilapi/xcertplay/PsaMediaControl$1.smali"
+    ]
+  },
+  "classes8.dex": {
+    "original_method_count": 677,
+    "changed": [
+      [
+        "com/shilapi/xcertplay/network/ManualHotspotManager.smali",
+        "private final hotspotAddress(Ljava/net/NetworkInterface;)Ljava/net/InetAddress;"
+      ]
+    ],
+    "added": [
+      [
+        "com/shilapi/xcertplay/network/WirelessHostAddressKt.smali",
+        "public static psaHostAddress(Ljava/util/List;ILjava/net/NetworkInterface;)Ljava/net/InetAddress;"
+      ]
+    ],
+    "new_classes": []
+  },
+  "media_dex_byte_identical_to_previous_delivered_media_fix": true
+}

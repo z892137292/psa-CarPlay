@@ -1,0 +1,17 @@
+Verifies
+Verified using v1 scheme (JAR signing): false
+Verified using v2 scheme (APK Signature Scheme v2): false
+Verified using v3 scheme (APK Signature Scheme v3): true
+Verified using v3.1 scheme (APK Signature Scheme v3.1): false
+Verified using v4 scheme (APK Signature Scheme v4): false
+Verified for SourceStamp: false
+Number of signers: 1
+Signer #1 certificate DN: CN=PSA Media IPv4 Independent Test 20261014, O=Private Testing, C=CN
+Signer #1 certificate SHA-256 digest: b2377f958e32a9a7ba4a4c8357614206297de66e745b10edfa01956ec826a526
+Signer #1 certificate SHA-1 digest: 598e5ce6c0b5d16d4388d1581a9bf33eb2a30cd8
+Signer #1 certificate MD5 digest: e384a371f727da02eee98854d0d9fe14
+Signer #1 key algorithm: RSA
+Signer #1 key size (bits): 3072
+Signer #1 public key SHA-256 digest: b6a7daf2e8c8ed3866d89b487f4b9a31b23cbeffff67b8ef57e5403b8963ff31
+Signer #1 public key SHA-1 digest: 4f4e4bb2aeecd05922c64b5abb7646dcd99913d8
+Signer #1 public key MD5 digest: 0d40dd8682398ac77a6121ac1d64b369

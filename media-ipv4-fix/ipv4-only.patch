@@ -1,0 +1,58 @@
+--- a/smali_classes8/com/shilapi/xcertplay/network/ManualHotspotManager.smali
++++ b/smali_classes8/com/shilapi/xcertplay/network/ManualHotspotManager.smali
+@@ -1811,7 +1811,7 @@
+ 
+     move-result v1
+ 
+-    invoke-static {v0, v1}, Lcom/shilapi/xcertplay/network/WirelessHostAddressKt;->wirelessHostAddress(Ljava/util/List;I)Ljava/net/InetAddress;
++    invoke-static {v0, v1, p1}, Lcom/shilapi/xcertplay/network/WirelessHostAddressKt;->psaHostAddress(Ljava/util/List;ILjava/net/NetworkInterface;)Ljava/net/InetAddress;
+ 
+     move-result-object v0
+ 
+--- a/smali_classes8/com/shilapi/xcertplay/network/WirelessHostAddressKt.smali
++++ b/smali_classes8/com/shilapi/xcertplay/network/WirelessHostAddressKt.smali
+@@ -309,3 +309,44 @@
+     .line 14
+     return-object v0
+ .end method
++
++.method public static psaHostAddress(Ljava/util/List;ILjava/net/NetworkInterface;)Ljava/net/InetAddress;
++    .locals 4
++    sget v0, Landroid/os/Build$VERSION;->SDK_INT:I
++    const/16 v1, 0x1c
++    if-ne v0, v1, :fallback
++    invoke-virtual {p2}, Ljava/net/NetworkInterface;->getName()Ljava/lang/String;
++    move-result-object v0
++    const-string v1, "ap0"
++    invoke-virtual {v1, v0}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
++    move-result v0
++    if-eqz v0, :fallback
++    invoke-interface {p0}, Ljava/util/List;->iterator()Ljava/util/Iterator;
++    move-result-object v0
++    :loop
++    invoke-interface {v0}, Ljava/util/Iterator;->hasNext()Z
++    move-result v1
++    if-eqz v1, :fallback
++    invoke-interface {v0}, Ljava/util/Iterator;->next()Ljava/lang/Object;
++    move-result-object v1
++    instance-of v2, v1, Ljava/net/Inet4Address;
++    if-eqz v2, :loop
++    check-cast v1, Ljava/net/InetAddress;
++    invoke-virtual {v1}, Ljava/net/InetAddress;->isLoopbackAddress()Z
++    move-result v2
++    if-nez v2, :loop
++    invoke-virtual {v1}, Ljava/net/InetAddress;->isLinkLocalAddress()Z
++    move-result v2
++    if-nez v2, :loop
++    invoke-virtual {v1}, Ljava/net/InetAddress;->isAnyLocalAddress()Z
++    move-result v2
++    if-nez v2, :loop
++    invoke-virtual {v1}, Ljava/net/InetAddress;->isMulticastAddress()Z
++    move-result v2
++    if-nez v2, :loop
++    return-object v1
++    :fallback
++    invoke-static {p0, p1}, Lcom/shilapi/xcertplay/network/WirelessHostAddressKt;->wirelessHostAddress(Ljava/util/List;I)Ljava/net/InetAddress;
++    move-result-object v0
++    return-object v0
++.end method
