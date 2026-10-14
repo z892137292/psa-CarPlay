@@ -1,0 +1,29 @@
+--- a/smali_classes3/com/shilapi/xcertplay/PsaMediaControl.smali
++++ b/smali_classes3/com/shilapi/xcertplay/PsaMediaControl.smali
+@@ -507,10 +507,15 @@
+ 
+     if-nez v0, :cond_0
+ 
++    iget-boolean v0, p0, Lcom/shilapi/xcertplay/PsaMediaControl;->foreground:Z
++
++    if-nez v0, :psa_ready
++
+     iget-boolean v0, p0, Lcom/shilapi/xcertplay/PsaMediaControl;->eligible:Z
+ 
+     if-eqz v0, :cond_0
+ 
++    :psa_ready
+     const/4 v0, 0x1
+ 
+     goto :goto_0
+@@ -550,10 +555,6 @@
+     if-eqz v0, :cond_3
+ 
+     iget-boolean v0, p0, Lcom/shilapi/xcertplay/PsaMediaControl;->foreground:Z
+-
+-    if-eqz v0, :cond_3
+-
+-    iget-boolean v0, p0, Lcom/shilapi/xcertplay/PsaMediaControl;->eligible:Z
+ 
+     if-eqz v0, :cond_3
+ 

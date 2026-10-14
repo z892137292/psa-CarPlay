@@ -1,0 +1,71 @@
+#!/usr/bin/env python3
+"""Build locally from the pinned latest media + IPv4 baseline. Never uploads APKs or reads key contents."""
+import argparse
+import hashlib
+import pathlib
+import re
+import subprocess
+import sys
+import zipfile
+
+EXPECTED = '968c4c2bf8aa9187ae4cd619cb59c4eaf1e4792f0ba002d773cebdf38ca2c311'
+p = argparse.ArgumentParser()
+p.add_argument('--mother', required=True, type=pathlib.Path)
+p.add_argument('--apktool', required=True, type=pathlib.Path)
+p.add_argument('--build-tools', required=True, type=pathlib.Path)
+p.add_argument('--jdk', required=True, type=pathlib.Path)
+p.add_argument('--work', required=True, type=pathlib.Path)
+p.add_argument('--keystore', required=True, type=pathlib.Path)
+p.add_argument('--password-file', required=True, type=pathlib.Path)
+p.add_argument('--alias', default='psa-media-test')
+p.add_argument('--output', required=True, type=pathlib.Path)
+a = p.parse_args()
+for name in ['mother','apktool','build_tools','jdk','work','keystore','password_file','output']:
+    setattr(a,name,getattr(a,name).resolve())
+if hashlib.sha256(a.mother.read_bytes()).hexdigest() != EXPECTED:
+    raise SystemExit('STOP: mother SHA-256 mismatch')
+if hashlib.sha256(a.apktool.read_bytes()).hexdigest() != '66cf4524a4a45a7f56567d08b2c9b6ec237bcdd78cee69fd4a59c8a0243aeafa':
+    raise SystemExit('STOP: use the pinned Apktool 2.12.1 binary from README')
+if a.output == a.mother or a.output.exists():
+    raise SystemExit('STOP: output exists or is mother; choose a new output path')
+a.work.mkdir(parents=True, exist_ok=False)
+a.output.parent.mkdir(parents=True, exist_ok=True)
+source = pathlib.Path(__file__).resolve().parents[1]
+classes = a.work/'tool-classes'; classes.mkdir()
+def run(*args, **kw):
+    subprocess.run(list(map(str,args)),check=True,**kw)
+run(a.jdk/'bin/java','com.sun.tools.javac.Main','-cp',a.apktool,'-d',classes,source/'scripts/SmaliTool.java')
+classpath = str(classes)+':'+str(a.apktool)
+def smali(mode, source, target):
+    run(a.jdk/'bin/java','-cp',classpath,'SmaliTool',mode,source,target)
+with zipfile.ZipFile(a.mother) as mother:
+    if mother.testzip() is not None: raise SystemExit('Corrupt mother ZIP')
+    (a.work/'original.dex').write_bytes(mother.read('classes3.dex'))
+smali('disassemble',a.work/'original.dex',a.work/'smali_classes3')
+with (source/'media-timing.patch').open('rb') as patch:
+    run('patch','--batch','--fuzz=0','-p1',cwd=a.work,stdin=patch)
+smali('assemble',a.work/'smali_classes3',a.work/'classes3.dex')
+smali('disassemble',a.work/'original.dex',a.work/'before')
+smali('disassemble',a.work/'classes3.dex',a.work/'roundtrip')
+with (a.work/'method-diff.json').open('w') as report:
+    run(sys.executable,source/'scripts/verify_methods.py',a.work/'before',a.work/'roundtrip',stdout=report)
+unsigned=a.work/'unsigned.apk'
+with zipfile.ZipFile(a.mother) as mother, zipfile.ZipFile(unsigned,'w') as out:
+    for entry in mother.infolist():
+        # Remove only JAR signing records; all unrelated META-INF data is preserved.
+        if re.fullmatch(r'META-INF/(?:MANIFEST\.MF|[^/]+\.(?:SF|RSA|DSA|EC))',entry.filename,re.I): continue
+        data=(a.work/entry.filename).read_bytes() if entry.filename == 'classes3.dex' else mother.read(entry)
+        out.writestr(entry,data)
+aligned=a.work/'aligned.apk'
+run(a.build_tools/'zipalign','-P','16','-f','4',unsigned,aligned)
+run(a.build_tools/'apksigner','sign','--ks',a.keystore,'--ks-key-alias',a.alias,
+    '--ks-pass','file:'+str(a.password_file),
+    '--v1-signing-enabled','false','--v2-signing-enabled','true','--v3-signing-enabled','true',
+    '--v4-signing-enabled','false','--out',a.output,aligned)
+run(a.build_tools/'apksigner','verify','--verbose','--print-certs',a.output)
+run(a.build_tools/'zipalign','-c','-P','16','4',a.output)
+with (a.work/'apk-verification.json').open('w') as report:
+    run(sys.executable,source/'scripts/verify_apk.py',a.mother,a.output,stdout=report)
+if hashlib.sha256(a.mother.read_bytes()).hexdigest()!=EXPECTED: raise SystemExit('Mother changed')
+print('OUTPUT SHA256',hashlib.sha256(a.output.read_bytes()).hexdigest())
+print('STRUCTURE/SIGNATURE CHECK ONLY; NOT ART/INSTALLATION/PSA VALIDATION.')

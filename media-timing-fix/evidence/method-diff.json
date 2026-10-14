@@ -1,0 +1,15 @@
+{
+  "classes_compared": 228,
+  "methods_compared": 1474,
+  "changed_methods": [
+    [
+      "com/shilapi/xcertplay/PsaMediaControl.smali",
+      "private refreshActive()V"
+    ],
+    [
+      "com/shilapi/xcertplay/PsaMediaControl.smali",
+      "private restoreOnce()V"
+    ]
+  ],
+  "all_other_methods_fields_annotations": "IDENTICAL"
+}
