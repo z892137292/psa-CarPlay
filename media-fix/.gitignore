@@ -1,0 +1,9 @@
+*.apk
+*.dex
+*.class
+*.p12
+*.jks
+*.keystore
+*.pk8
+password*.txt
+build/

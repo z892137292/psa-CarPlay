@@ -1,0 +1,24 @@
+#!/usr/bin/env python3
+"""Execute the shipped Java adapter with controlled Android API fakes; NOT ART/vehicle tests."""
+import pathlib, subprocess, tempfile, sys
+src = pathlib.Path(__file__).resolve().parents[1] / 'src/com/shilapi/xcertplay/PsaMediaControl.java'
+fakes = {
+'android/content/Context.java': '''package android.content; public class Context {public static final String AUDIO_SERVICE="audio"; public Object service; public Object getSystemService(String key){return service;}}''',
+'android/content/Intent.java': '''package android.content; public class Intent {public static final String ACTION_MEDIA_BUTTON="android.intent.action.MEDIA_BUTTON",EXTRA_KEY_EVENT="android.intent.extra.KEY_EVENT"; public String action=ACTION_MEDIA_BUTTON; public Object event; public String getAction(){return action;} @SuppressWarnings("unchecked") public <T> T getParcelableExtra(String key){return (T)event;}}''',
+'android/os/Handler.java': '''package android.os; import java.util.*; public class Handler {private final Queue<Runnable> queue=new ArrayDeque<Runnable>(); public boolean post(Runnable r){queue.add(r);return true;} public void idle(){while(!queue.isEmpty())queue.remove().run();}}''',
+'android/util/Log.java': '''package android.util; public class Log {public static int i(String t,String m){return 0;} public static int w(String t,String m){return 0;}}''',
+'android/view/KeyEvent.java': '''package android.view; public class KeyEvent {public static final int ACTION_DOWN=0; private int key,action,repeat,device;private long down; public KeyEvent(int k,int a,int r,long d,int v){key=k;action=a;repeat=r;down=d;device=v;} public int getKeyCode(){return key;} public int getAction(){return action;} public int getRepeatCount(){return repeat;} public long getDownTime(){return down;} public int getDeviceId(){return device;}}''',
+'android/media/AudioAttributes.java': '''package android.media; public class AudioAttributes {public static final int USAGE_MEDIA=1,CONTENT_TYPE_MUSIC=2; public static class Builder {public Builder setUsage(int v){return this;} public Builder setContentType(int v){return this;} public AudioAttributes build(){return new AudioAttributes();}}}''',
+'android/media/AudioFocusRequest.java': '''package android.media; import android.os.Handler; public class AudioFocusRequest {public AudioManager.OnAudioFocusChangeListener listener;public boolean pauseOnDuck; public static class Builder {private final AudioFocusRequest r=new AudioFocusRequest(); public Builder(int g){} public Builder setAudioAttributes(AudioAttributes a){return this;}public Builder setWillPauseWhenDucked(boolean b){r.pauseOnDuck=b;return this;}public Builder setOnAudioFocusChangeListener(AudioManager.OnAudioFocusChangeListener l,Handler h){r.listener=l;return this;}public AudioFocusRequest build(){return r;}}}''',
+'android/media/AudioManager.java': '''package android.media; public class AudioManager {public static final int AUDIOFOCUS_GAIN=1,AUDIOFOCUS_LOSS=-1,AUDIOFOCUS_LOSS_TRANSIENT=-2,AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK=-3,AUDIOFOCUS_REQUEST_GRANTED=1,AUDIOFOCUS_REQUEST_FAILED=0;public interface OnAudioFocusChangeListener{void onAudioFocusChange(int change);}public int requests,abandons,result=1;public boolean throwsRequest;public AudioFocusRequest last;public int requestAudioFocus(AudioFocusRequest r){requests++;last=r;if(throwsRequest)throw new SecurityException();return result;}public int abandonAudioFocusRequest(AudioFocusRequest r){abandons++;return 1;}public void focus(int c){last.listener.onAudioFocusChange(c);}}''',
+'android/media/session/MediaSession.java': '''package android.media.session; import android.content.Intent;import android.os.Handler; public class MediaSession{public static final int FLAG_HANDLES_MEDIA_BUTTONS=1,FLAG_HANDLES_TRANSPORT_CONTROLS=2; public boolean active;public int flags;public Callback callback;public void setFlags(int f){flags=f;}public void setCallback(Callback c,Handler h){callback=c;}public void setMediaButtonReceiver(Object p){}public void setActive(boolean a){active=a;}public boolean isActive(){return active;} public static class Callback{public boolean onMediaButtonEvent(Intent i){return false;}public void onPlay(){}public void onPause(){}public void onSkipToNext(){}public void onSkipToPrevious(){}public void onSeekTo(long p){}public void onStop(){}}}''',
+}
+with tempfile.TemporaryDirectory(prefix='psa-media-tests-') as tmp:
+    root=pathlib.Path(tmp)
+    for name,text in fakes.items():
+        path=root/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_text(text)
+    out=root/'classes';out.mkdir()
+    javac=sys.argv[1] if len(sys.argv)>1 else 'javac'
+    java=sys.argv[2] if len(sys.argv)>2 else 'java'
+    subprocess.run([javac,'--release','8','-d',str(out),str(src),str(pathlib.Path(__file__).with_name('MediaControlTest.java')),*map(str,root.rglob('*.java'))],check=True)
+    subprocess.run([java,'-ea','-cp',str(out),'MediaControlTest'],check=True)

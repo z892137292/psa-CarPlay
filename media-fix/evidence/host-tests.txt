@@ -1,0 +1,18 @@
+PASS first connection and metadata eligibility
+PASS 10 ownership cycles and no metadata/repeated-resume stealing
+PASS denied focus does not retry or forward
+PASS request exception fails closed
+PASS transient loss and navigation do not trigger re-request
+PASS duck loss suspends, repeated callbacks do not double-pause
+PASS permanent loss while foreground waits for a new transition
+PASS pause cancels a pending metadata-triggered request
+PASS background resume with retained ownership does not re-request
+PASS key mapping, up/repeat filtering, interleaved duplicates
+PASS different physical presses and devices remain distinct
+PASS unrelated events fall through
+PASS callbacks reuse original implementation and seek gate
+PASS close is idempotent and stale callbacks cannot reactivate
+PASS close before first pending foreground task
+PASS paused track remains controllable; empty metadata deactivates
+PASS session replacement starts independent dedup state
+RESULT: 17 scenarios; 86 assertions passed. HOST FAKES ONLY; NOT ANDROID/ART/PSA VALIDATION.

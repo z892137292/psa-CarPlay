@@ -1,0 +1,91 @@
+{
+  "mother_sha256": "6e5f6c0ab10d16c2abaef6d00eda0e7c0a76d78c7eef55c942e8a0338ce83d5e",
+  "test_sha256": "079c85404f7719099af22f3cc15565c8cf83a0648c071f6aa8326c8e68281dc6",
+  "test_size": 15366494,
+  "zip_entries": 122,
+  "changed_entries": [
+    "classes3.dex"
+  ],
+  "unchanged_entries": 121,
+  "manifest_resources_native_libraries_and_auth_assets": "BYTE_IDENTICAL",
+  "dex": [
+    {
+      "name": "classes.dex",
+      "size": 11834716,
+      "classes": 8363,
+      "sha256": "afb1bce9bd943e821abbde1111607afb849165e3e1156723d86686ba391b2f06",
+      "checksums": "PASS"
+    },
+    {
+      "name": "classes10.dex",
+      "size": 28240,
+      "classes": 51,
+      "sha256": "b04e8d5a27b4f05935bd71e4dc99855f558db9c3fd8b9c8fd8fbbb565a11c1a7",
+      "checksums": "PASS"
+    },
+    {
+      "name": "classes11.dex",
+      "size": 104896,
+      "classes": 654,
+      "sha256": "0ce55decdd808715cc6339313aa9a037a8eb11bba1ca9f7c4478946f40957497",
+      "checksums": "PASS"
+    },
+    {
+      "name": "classes2.dex",
+      "size": 401060,
+      "classes": 198,
+      "sha256": "a0ce3d9e1361539c3e24a08b616f5a0af8c48fa2f8af258424b5c4fc2ee1f39e",
+      "checksums": "PASS"
+    },
+    {
+      "name": "classes3.dex",
+      "size": 438204,
+      "classes": 228,
+      "sha256": "3b29cc74edc5dd967d924ba2c51e55814b89c7c3f41bc05ca726fd71d45b473c",
+      "checksums": "PASS"
+    },
+    {
+      "name": "classes4.dex",
+      "size": 450452,
+      "classes": 253,
+      "sha256": "f14c7f242096e9972cb341e8b8ca7e56daf5d094579176f4c3394016e237bae3",
+      "checksums": "PASS"
+    },
+    {
+      "name": "classes5.dex",
+      "size": 144904,
+      "classes": 69,
+      "sha256": "2ce430ee414ebc0b20eca6a2eaeca64da8180f6d2cb9f0cfc3862cb49f068f99",
+      "checksums": "PASS"
+    },
+    {
+      "name": "classes6.dex",
+      "size": 11084,
+      "classes": 6,
+      "sha256": "c8572d476bd4e84447276f8f1a6654e0765dc0a0e195b9e0924b79de68ad49fb",
+      "checksums": "PASS"
+    },
+    {
+      "name": "classes7.dex",
+      "size": 27040,
+      "classes": 10,
+      "sha256": "2658e62c4b62ca13092a208367450faf5269c35bdbe7fcb93eeb5cf8fdc4c3fc",
+      "checksums": "PASS"
+    },
+    {
+      "name": "classes8.dex",
+      "size": 245580,
+      "classes": 109,
+      "sha256": "be7825e85a3b677db4dd99bbe62d57e3b82b0c6c475bdd6c134c683562690e89",
+      "checksums": "PASS"
+    },
+    {
+      "name": "classes9.dex",
+      "size": 37260,
+      "classes": 16,
+      "sha256": "e7b00b41475bfb4efc81659ba6f6d67e5fd9a564d79c81388706c64013877684",
+      "checksums": "PASS"
+    }
+  ],
+  "runtime_validation": "NOT RUN"
+}

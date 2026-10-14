@@ -1,0 +1,42 @@
+{
+  "changed_original_methods": [
+    [
+      "com/shilapi/xcertplay/CarPlayHostActivity.smali",
+      "protected onPause()V"
+    ],
+    [
+      "com/shilapi/xcertplay/CarPlayHostActivity.smali",
+      "protected onResume()V"
+    ],
+    [
+      "com/shilapi/xcertplay/AndroidPlayMediaSession.smali",
+      "public constructor <init>(Landroid/content/Context;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;)V"
+    ],
+    [
+      "com/shilapi/xcertplay/AndroidPlayMediaSession.smali",
+      "static final update$lambda$3(Lcom/shilapi/xcertplay/AndroidPlayMediaSession;Lcom/shilapi/xcertplay/media/CarPlayNowPlaying;)V"
+    ],
+    [
+      "com/shilapi/xcertplay/AndroidPlayMediaSession.smali",
+      "public close()V"
+    ],
+    [
+      "com/shilapi/xcertplay/CarPlayBackgroundSession.smali",
+      "public final declared-synchronized store(Lcom/shilapi/xcertplay/orchestration/CarPlayController;Lcom/shilapi/xcertplay/media/AndroidMediaSink;IILjava/lang/Object;Lkotlin/jvm/functions/Function1;)V"
+    ]
+  ],
+  "added_methods_existing_classes": [
+    [
+      "com/shilapi/xcertplay/AndroidPlayMediaSession.smali",
+      "public final psaSetForeground(Z)V"
+    ],
+    [
+      "com/shilapi/xcertplay/CarPlayBackgroundSession.smali",
+      "public final declared-synchronized psaSetMediaForeground(Ljava/lang/Object;Z)V"
+    ]
+  ],
+  "added_classes": [
+    "com/shilapi/xcertplay/PsaMediaControl.smali",
+    "com/shilapi/xcertplay/PsaMediaControl$1.smali"
+  ]
+}
